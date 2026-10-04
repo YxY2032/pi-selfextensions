@@ -1,0 +1,29 @@
+{
+	"name": "pi-plan",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Execution working memory for the pi coding agent: a write_plan tool with per-run snapshot injection, compact diff rendering, and a settle marker that lights up when a run ends with unfinished steps.",
+	"keywords": ["pi-package"],
+	"scripts": {
+		"test": "vitest --run"
+	},
+	"pi": {
+		"extensions": ["./index.ts"]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-agent-core": "*",
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*",
+		"typebox": "*"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-agent-core": "0.86.1",
+		"@earendil-works/pi-ai": "0.86.1",
+		"@earendil-works/pi-coding-agent": "0.86.1",
+		"@earendil-works/pi-tui": "0.86.1",
+		"typebox": "1.3.27",
+		"vitest": "4.1.9"
+	}
+}

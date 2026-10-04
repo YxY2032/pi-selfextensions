@@ -1,0 +1,11 @@
+{
+  "name": "system-inject",
+  "private": true,
+  "pi": {
+    "extensions": [
+      "./index.ts",
+      "./drift-guard.ts"
+    ]
+  },
+  "type": "module"
+}
