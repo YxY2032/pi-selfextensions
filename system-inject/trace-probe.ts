@@ -100,7 +100,10 @@ export default function (pi) {
       // 引导形态的骨架本身就含 "## Now" 字样,不算泄漏;只有非引导形态出现才是真泄漏
       markers.nowLeak = markers.nowSection && !system.includes("当前没有导航文件");
       delete markers.nowSection;
-      log({ type: "request", seq: reqSeq, sysLen: system.length, sysHash: hash, markers, msgCount: messages });
+      // 工具声明在请求级 payload.tools(0.86.1 不进 system prompt 的 tools 节)
+      const rawTools = payload && Array.isArray(payload.tools) ? (payload.tools as Record<string, unknown>[]) : [];
+      const toolNames = rawTools.map((t) => String((t as { function?: { name?: unknown }; name?: unknown }).function?.name ?? t.name ?? "?")).sort();
+      log({ type: "request", seq: reqSeq, sysLen: system.length, sysHash: hash, markers, msgCount: messages, tools: toolNames });
       if (!dumpedSystem.has(hash)) {
         dumpedSystem.add(hash);
         writeFileSync(`${TRACE_DIR}/systemdump-${hash}.txt`, system);

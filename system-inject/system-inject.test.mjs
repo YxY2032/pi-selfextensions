@@ -149,6 +149,16 @@ await withCase("T11 快照滚动清理:超过 20 份删最旧", async () => {
   assert.ok(dumps.some((f) => f.includes(String(process.pid))), "最新一份(本进程)应保留");
 });
 
+await withCase("T12 尾部锚定:锚位于最终系统提示词末尾(ADR-0001 不变量)", async () => {
+  const run = makeRunner();
+  const withSections = BASE + "\n<rules>\nR1\n</rules>\n<custom_section>\nSECTION-TAIL-MARKER\n</custom_section>";
+  const r = await run(withSections);
+  const anchorIdx = r.systemPrompt.lastIndexOf("## 任务导航");
+  assert.ok(anchorIdx > 0, "锚应在");
+  assert.ok(anchorIdx > r.systemPrompt.lastIndexOf("SECTION-TAIL-MARKER"), "锚应在全部节之后");
+  assert.ok(!/\n\n</.test(r.systemPrompt.slice(anchorIdx)), "锚之后不得再出现任何节(尾部锚定)");
+});
+
 console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
 if (failed > 0) {
   console.log(failures.map(f => "  - " + f).join("\n"));

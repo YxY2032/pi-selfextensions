@@ -1,5 +1,11 @@
 # Plan Extension
 
+> **已存档(2026-10-06,[ADR-0001](../docs/adr/0001-single-navigation-system.md))**:
+> 本包已从启用集(settings.json packages)移除。其 sections 注入与 system-inject
+> 必需的 force 通道结构性冲突(forced-prompt projection 整体替换 system message,
+> 计划从未到达模型),导航体系已收敛为单一系统(system-inject)。代码、设计与测试
+> 保留供参考;如需复活,先重开 ADR-0001。
+
 The agent's in-session execution working memory for long-horizon tasks: a
 `write_plan` tool the model uses to decompose a task into steps and advance
 through them, with per-run system-prompt injection. When a run settles with

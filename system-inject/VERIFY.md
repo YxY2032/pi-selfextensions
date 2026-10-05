@@ -50,12 +50,13 @@ Windows TUI 键位(0.86.1 默认):流式中 Enter=steer(打断当前流),Ctrl+Q=
 
 ## 已知事实(2026-10-06 实测,pi 0.86.1)
 
-- **pi-plan 同栈时注入被压制**(确定性两臂 + 真实扩展两臂证实):pi-plan 把计划写入
-  `systemPromptOptions.sections.plan_state`(会话文件里能看到该节),但 system-inject
-  的 before_agent_start 返回 forceSystemPrompt 后,宿主在每次请求时用 forced-prompt
-  projection **整体替换** system message——sections 全部被丢弃,模型收不到。
-  pi-plan 单独加载(`pi --no-extensions -e pi-plan/index.ts`)时注入正常。
-  报告里 `会话侧 plan_state=true` 而 `plan_state到达=false` 即压制的直接证据形态。
-  修复方向待裁决:调换 packages 顺序 / 锚改走 sections 通道 / 两套收敛为一套。
-
+- **pi-plan 同栈注入压制 → 已由 ADR-0001 收敛解决**(pi-plan 退出启用集存档)。
+  历史诊断结论保留如下:pi-plan 把计划写入 `systemPromptOptions.sections.plan_state`
+  (会话文件里能看到该节),但 system-inject 的 before_agent_start 返回 forceSystemPrompt
+  后,宿主在每次请求时用 forced-prompt projection **整体替换** system message——
+  sections 全部被丢弃,模型收不到。pi-plan 单独加载(`pi --no-extensions -e pi-plan/index.ts`)
+  时注入正常。报告里 `会话侧 plan_state=true` 而 `plan_state到达=false` 即压制的直接
+  证据形态。若未来出现新的 sections 注入型扩展,先重开 ADR-0001。
+- 扩展工具(checkpoint/write_plan 等)不在 system prompt 的 tools 节声明,
+  而在请求级 `payload.tools`(探针已记录,trace-report 会打印工具声明清单)。
 - 探针标记 `nowLeak` 已排除引导形态误报(骨架本身含 `## Now` 字样,不算泄漏)。

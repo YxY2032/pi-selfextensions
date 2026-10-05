@@ -71,7 +71,7 @@ content 返回值是整体替换语义(agent-session.ts 的 `hookResult?.content
 |---|---|
 | `index.ts` | preamble + 锚实现 |
 | `drift-guard.ts` | checkpoint 工具 + 节拍器 + 转向确认实现 |
-| `system-inject.test.mjs` | index.ts 单元测试,11 用例(运行:`node system-inject.test.mjs`) |
+| `system-inject.test.mjs` | index.ts 单元测试,12 用例(运行:`node system-inject.test.mjs`) |
 | `drift-guard.test.mjs` | drift-guard 单元测试,19 用例(运行:`node drift-guard.test.mjs`) |
 | `bench-drift.mjs` | A/B 行为基准,4 场景(锚遵循/因果对照/零干预/任务切换;运行:`node bench-drift.mjs`,会发起 5 次真实 pi 调用) |
 | `trace-probe.ts` | 实机追踪探针(`-e` 显式加载):记录模型实收的 system 标记/steer 事件/工具调用时间线,只记录零修改 |
@@ -114,24 +114,28 @@ content 返回值是整体替换语义(agent-session.ts 的 `hookResult?.content
 
 ## 测试
 
-`node system-inject.test.mjs` — 11 用例:preamble 注入位置、引导/状态两形态、
-Now 分离、无 Goal 兜底、信任门、截断、总开关、CRLF、空文件、无修改返回 undefined、快照滚动清理。
+`node system-inject.test.mjs` — 12 用例:preamble 注入位置、引导/状态两形态、
+Now 分离、无 Goal 兜底、信任门、截断、总开关、CRLF、空文件、无修改返回 undefined、
+快照滚动清理、尾部锚定(ADR-0001 不变量)。
 `node drift-guard.test.mjs` — 19 用例:工具注册/骨架/Now 覆盖/回顾落盘/折叠保留/宽容占位、
 节拍 10/20/15 与同轮去重/时钟复位/失败不计次、转向全链/首条不误触/followUp 不武装、总开关
 (含无文档路径)、Goal 尾随空格防覆写、内联"### 回顾"防幻影块、读失败防覆写、
 提示追加保留工具输出(T7/T8/T12)。
-端到端:种带标记的 PROGRESS.md 后跑 `pi -p`,核验快照含 preamble+Goal+切换提示、不含 Now。
+端到端:种带标记的 PROGRESS.md 后跑 `pi -p`,核验快照含 preamble+Goal+切换提示、不含 Now;
+实机追踪与"模型实收"判定见 [VERIFY.md](./VERIFY.md)(探针 + 会话分析器)。
 行为基准:`node bench-drift.mjs` — B1 锚遵循(含关阔回归对照)/ B2 零干预 / B3 任务切换。
 
 ## 路线图
 
 1. ~~checkpoint 工具~~ / ~~节拍器~~ / ~~转向确认~~ / ~~结构化回顾史~~ — 已实现(见 drift-guard.ts)
 2. 真实环境长任务验证:节拍触发下 PROGRESS.md 自动演化、转向提示在 steer 场景落地
-3. 若与 pi-plan 重叠过大,收敛为一套(见下节)
+3. ~~若与 pi-plan 重叠过大,收敛为一套~~ — 已收敛(ADR-0001,pi-plan 存档)
 
-## 与 pi-plan 的关系(重要)
+## 与 pi-plan 的关系(已收敛,ADR-0001)
 
-`pi-plan` 与本扩展的锚部件**同源同题**:都是"长任务工作记忆衰减 → 用转录外的小型权威状态存储 + 每轮重新呈现"的解法。
-pi-plan 是该理念的成熟实现(write_plan 工具 + 每轮注入 + 尾灯提示,含 ADR 与测试)。
-后续实现 checkpoint/节拍器前,应先评估与 pi-plan 的功能边界:避免两套导航系统同时注入、重复提醒。
-建议分工:pi-plan 管执行清单(write_plan),本扩展管 preamble 注入与轻量导航锚;若重叠过大,优先复用 pi-plan。
+pi-plan 曾是与本扩展锚部件**同源同题**的第二套导航系统(write_plan 工具 + 每轮
+sections.plan_state 注入 + 尾灯)。2026-10-06 证实其注入与 force 通道结构性冲突:
+preamble 必须走 force 通道,宿主 forced-prompt projection 在每次请求时整体替换
+system message,pi-plan 的计划从未到达模型(四臂实验证据见 VERIFY.md)。
+导航体系已收敛为单一系统:pi-plan 退出启用集存档,本扩展为唯一导航系统。
+决策全文见 [docs/adr/0001](../docs/adr/0001-single-navigation-system.md)。

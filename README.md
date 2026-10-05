@@ -7,23 +7,25 @@
 
 | 分类 | 扩展 | 来源 | 干什么 |
 |---|---|---|---|
-| **注入与导航** | [system-inject](./system-inject/README.md) | 自研 | preamble 投影 + 防漂移导航锚(读 PROGRESS.md 注入 Goal) |
-| **工作流** | [pi-plan](./pi-plan/README.md) | 自研包 | 长任务执行清单:write_plan 工具 + 每轮系统提示词注入 + 尾灯提示 |
+| **注入与导航** | [system-inject](./system-inject/README.md) | 自研 | preamble 投影 + 防漂移导航锚(读 PROGRESS.md 注入 Goal)+ checkpoint/节拍器/转向确认 |
+| **工作流(存档)** | [pi-plan](./pi-plan/README.md) | 自研包 | 已停用(ADR-0001):write_plan 执行清单,注入通道与 force 冲突被压制 |
 | **外部工具** | pi-web-access | npm(`npm:pi-web-access`) | web_search / fetch_content / source_check 等联网工具 |
 
 ## 目录结构
 
 ```text
 selfextensions/
-├── README.md              ← 本文件:总索引
-├── system-inject/         ← [注入与导航] pi 包
-│   ├── package.json       ←    pi 清单(extensions: ./index.ts, ./drift-guard.ts)
-│   ├── index.ts           ←    preamble + 导航锚
-│   ├── drift-guard.ts     ←    checkpoint 工具 + 节拍器 + 转向确认
-│   ├── README.md          ←    术语/行为规格/决策记录/路线图
-│   ├── *.test.mjs         ←    单元测试(system-inject 11 + drift-guard 19 用例)
-│   └── bench-drift.mjs    ←    A/B 行为基准(4 场景,5 次真实调用)
-└── pi-plan/               ← [工作流] pi 包(自带 README/DESIGN/测试)
+├── README.md / AGENTS.md / CONTEXT.md  ← 总索引 / 工程技能配置 / 术语表
+├── docs/
+│   ├── agents/             ← 工程技能消费规则(tracker / labels / domain)
+│   └── adr/                ← 决策记录(0001: 单一导航系统,pi-plan 存档)
+├── .scratch/               ← 本地工单与 spec(feature 目录制)
+├── system-inject/          ← [注入与导航] pi 包(唯一导航系统,ADR-0001)
+│   ├── index.ts            ←    preamble + 导航锚
+│   ├── drift-guard.ts      ←    checkpoint 工具 + 节拍器 + 转向确认
+│   ├── trace-probe.ts / trace-report.mjs / VERIFY.md  ← 实机追踪与验证
+│   └── *.test.mjs / bench-drift.mjs                    ← 单测(12+19)与行为基准
+└── pi-plan/                ← [工作流] 已存档(ADR-0001)
 ```
 
 ## 多机同步(GitHub)
@@ -34,8 +36,6 @@ selfextensions/
 
 ```bash
 git clone git@github.com:YxY2032/pi-selfextensions.git ~/.pi/agent/selfextensions
-# pi-plan 有 npm 依赖,需安装(勿跑生命周期脚本以外的钩子):
-cd ~/.pi/agent/selfextensions/pi-plan && npm install --ignore-scripts
 ```
 
 `~/.pi/agent/settings.json` 的 `packages` 数组按上节配置即可(路径若用户名不同需相应调整)。
@@ -48,7 +48,6 @@ cd ~/.pi/agent/selfextensions/pi-plan && npm install --ignore-scripts
 ```jsonc
 [
   "/Users/yxy/.pi/agent/selfextensions/system-inject",  ← 目录(pi 清单解析)
-  "/Users/yxy/.pi/agent/selfextensions/pi-plan",
   "npm:pi-web-access"
 ]
 ```
@@ -59,9 +58,11 @@ cd ~/.pi/agent/selfextensions/pi-plan && npm install --ignore-scripts
 
 ## 注意事项
 
-1. **system-inject 与 pi-plan 功能相邻**:两者都会向系统提示词注入导航类内容
-   (锚 vs write_plan 计划),同时启用时注意观察是否重复提醒;
-   详细边界分析见 [system-inject/README.md](./system-inject/README.md) 末节。
+1. **导航体系已收敛为单一系统**(ADR-0001):pi-plan 已退出启用集存档。
+   其 sections 注入与 system-inject 必需的 force 通道结构性冲突(被宿主
+   forced-prompt projection 压制,从未到达模型);证据与复现方法见
+   [system-inject/VERIFY.md](./system-inject/VERIFY.md)。
+   若未来出现新的 sections 注入型扩展,先重开该 ADR。
 2. system-inject 的快照与审计日志在 `/tmp/anchor-probe/`(滚动保留 20 份)。
 3. 修改任何扩展代码后:`/reload` 或重启 pi 生效;改动后请跑对应测试。
 4. `npm:pi-web-access` 要求 pi ≥ 0.86.1;旧版本 pi 启动会告警并降级(可忽略)。
@@ -70,6 +71,7 @@ cd ~/.pi/agent/selfextensions/pi-plan && npm install --ignore-scripts
 
 ```bash
 cd system-inject
-node system-inject.test.mjs   # 11 单元用例(无需网络)
+node system-inject.test.mjs   # 12 单元用例(无需网络)
+node drift-guard.test.mjs     # 19 单元用例(无需网络)
 node bench-drift.mjs          # 4 场景 A/B 行为基准(5 次真实 pi 调用)
 ```

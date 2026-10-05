@@ -119,6 +119,7 @@ if (traceFile) {
     if (t.type === "request" && t.markers) {
       const mk = Object.entries(t.markers).filter(([, v]) => v).map(([k]) => k).join(",");
       console.log(`  请求#${t.seq} ${t.t} sysLen=${t.sysLen} hash=${t.sysHash} msgCount=${t.msgCount} 命中:${mk || "(无)"}`);
+      if (Array.isArray(t.tools)) console.log(`        工具声明(${t.tools.length}): ${t.tools.join(",")}`);
     } else if (t.type === "input") {
       console.log(`  输入 ${t.t} behavior=${t.behavior} | ${t.textHead}`);
     } else if (t.type === "run") {
