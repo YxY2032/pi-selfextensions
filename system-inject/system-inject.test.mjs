@@ -137,6 +137,7 @@ await withCase("T10 无任何修改 → 返回 undefined(不强制投影)", asyn
 await withCase("T11 快照滚动清理:超过 20 份删最旧", async () => {
   const run = makeRunner();
   const fs = await import("node:fs");
+  fs.mkdirSync("/tmp/anchor-probe", { recursive: true }); // Windows 首跑时目录不存在
   for (let i = 0; i < 24; i++) {
     writeFileSync(`/tmp/anchor-probe/systemprompt-1000-${String(i).padStart(3, "0")}-fake.txt`, "old");
   }

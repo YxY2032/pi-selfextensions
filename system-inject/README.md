@@ -72,9 +72,12 @@ content 返回值是整体替换语义(agent-session.ts 的 `hookResult?.content
 | `index.ts` | preamble + 锚实现 |
 | `drift-guard.ts` | checkpoint 工具 + 节拍器 + 转向确认实现 |
 | `system-inject.test.mjs` | index.ts 单元测试,11 用例(运行:`node system-inject.test.mjs`) |
-| `drift-guard.test.mjs` | drift-guard 单元测试,15 用例(运行:`node drift-guard.test.mjs`) |
+| `drift-guard.test.mjs` | drift-guard 单元测试,19 用例(运行:`node drift-guard.test.mjs`) |
 | `bench-drift.mjs` | A/B 行为基准,4 场景(锚遵循/因果对照/零干预/任务切换;运行:`node bench-drift.mjs`,会发起 5 次真实 pi 调用) |
-| `package.json` | pi 包清单(`pi.extensions: ["./index.ts", "./drift-guard.ts"]`) |
+| `trace-probe.ts` | 实机追踪探针(`-e` 显式加载):记录模型实收的 system 标记/steer 事件/工具调用时间线,只记录零修改 |
+| `trace-report.mjs` | 会话分析器:checkpoint 调用、提示送达、工具统计,`--trace` 合并探针出"模型实收"判定 |
+| `VERIFY.md` | 实机验证手册:标准流程 + 功能触发表 + 已知事实(pi-plan 同栈压制等) |
+| `package.json` | pi 包清单(`pi.extensions: ["./index.ts", "./drift-guard.ts"]`,探针刻意不在列) |
 
 单测导入策略:drift-guard.ts 依赖裸导入 `typebox`(运行时由 pi 虚拟模块提供宿主同一实例),
 单测把它拷贝进带 typebox 桩的临时目录再导入——真实扩展目录保持零 node_modules,避免物理副本遮蔽虚拟模块。

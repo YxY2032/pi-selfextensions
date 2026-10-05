@@ -9,9 +9,10 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const SRC = join(dirname(new URL(import.meta.url).pathname), "drift-guard.ts");
+// fileURLToPath:Windows 上 URL.pathname 是 "/E:/..." 形态,join 后产生 "E:\E:\..." 无效路径
+const SRC = join(dirname(fileURLToPath(import.meta.url)), "drift-guard.ts");
 
 // ── 搭建带桩的运行目录并导入 ─────────────────────────────────
 const RUN = mkdtempSync(join(tmpdir(), "dg-run-"));
