@@ -64,6 +64,12 @@ function hintKind(text) {
 }
 
 for (const e of entries) {
+  // 消息通道的提示(ADR-0004:custom 消息,不在工具结果里)——须在 message 守卫前处理
+  if (e.type === "custom" && e.customType === "drift-guard-hint") {
+    const text = (e.content ?? []).map((c) => c.text ?? "").join(" ");
+    hints.push({ ts: e.timestamp, turn: assistantTurns, tool: "(轮边界消息)", kind: hintKind(text), via: "message" });
+    continue;
+  }
   if (e.type !== "message") continue;
   const m = e.message;
   if (m.role === "system") {
@@ -107,7 +113,7 @@ for (const e of entries) {
     toolCounts[m.toolName] = (toolCounts[m.toolName] ?? 0) + 1;
     for (const c of m.content ?? []) {
       const hit = HINT_PREFIXES.find((p) => typeof c.text === "string" && c.text.includes(p));
-      if (hit) hints.push({ ts: e.timestamp, turn: assistantTurns, tool: m.toolName, kind: hintKind(c.text) });
+      if (hit) hints.push({ ts: e.timestamp, turn: assistantTurns, tool: m.toolName, kind: hintKind(c.text), via: "tail" });
     }
   }
 }
@@ -125,7 +131,7 @@ console.log(`\n[checkpoint 调用] 共 ${checkpoints.length} 次`);
 for (const c of checkpoints) console.log(`  ${c.ts} 第${c.turn}轮 kind=${c.kind} | ${c.status}`);
 
 console.log(`\n[节拍/转向提示送达] 共 ${hints.length} 次`);
-for (const h of hints) console.log(`  ${h.ts} 第${h.turn}轮 [${h.kind}] (附于 ${h.tool} 结果)`);
+for (const h of hints) console.log(`  ${h.ts} 第${h.turn}轮 [${h.kind}] ${h.via === "message" ? "(轮边界消息)" : `(附于 ${h.tool} 结果)`}`);
 
 // ── 导航演化回放(--nav):内容质量审计 ────────────────────────
 if (navFlag) {

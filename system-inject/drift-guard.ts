@@ -16,6 +16,11 @@ const REVIEW_QUOTE_MAX = 60; // 提示中回顾自省截断
 
 const enabled = () => process.env.PI_DRIFT_GUARD !== "off";
 
+// 提示投递通道(ADR-0004):message=轮边界独立消息(pi.sendMessage,默认)——实测以
+// user 角色落在请求消息末尾,模型必读的位置;tail=旧通道(工具结果尾巴,对照实验用)。
+// 仅节拍的 status/review 提示走此开关;转向/建档提示保持尾巴通道(单变量纪律)。
+const hintViaMessage = () => process.env.PI_DRIFT_HINT_CHANNEL !== "tail";
+
 // —— 运行状态(before_agent_start 复位;reviewCount 为任务级,跨运行连续)
 // 双时钟分离(ADR-0002):lastStatusTurn/lastReviewTurn 是节拍时钟(提示即消费,防逐轮轰炸);
 // lastNavWriteTurn/lastActualReviewTurn 是陈旧事实基准——只有真实导航更新(checkpoint
@@ -248,7 +253,8 @@ function isDirectNavWrite(event: { toolName?: string; input?: unknown }): boolea
 
 // 节拍器:优先级 转向确认 > 建文档提醒(仅一次) > review > status;
 // 同轮去重:lastNudgedTurn 守卫;提示即消费节拍时钟,避免逐轮轰炸。
-function onToolResult(event: { isError?: boolean; content?: unknown[]; toolName?: string; input?: unknown }) {
+// status/review 默认经轮边界消息通道投递(ADR-0004);sendHint 由注册处注入。
+function onToolResult(event: { isError?: boolean; content?: unknown[]; toolName?: string; input?: unknown }, sendHint?: (hint: string) => void) {
   if (!enabled()) return undefined;
   if (event.isError) return undefined;
   toolCalls++;
@@ -275,7 +281,12 @@ function onToolResult(event: { isError?: boolean; content?: unknown[]; toolName?
     lastNudgedTurn = turnCount;
     if (dueReview) lastReviewTurn = turnCount;
     if (dueStatus) lastStatusTurn = turnCount;
-    return appendHint(event, dueReview ? reviewHint() : statusHint());
+    const hint = dueReview ? reviewHint() : statusHint();
+    if (sendHint && hintViaMessage()) {
+      sendHint(hint);
+      return undefined;
+    }
+    return appendHint(event, hint);
   }
   return undefined;
 }
@@ -345,5 +356,12 @@ export default function (pi) {
     return undefined;
   });
 
-  pi.on("tool_result", onToolResult);
+  pi.on("tool_result", (event) =>
+    onToolResult(event, (hint) => {
+      pi.sendMessage(
+        { customType: "drift-guard-hint", content: [{ type: "text", text: hint }], display: true },
+        { triggerTurn: true },
+      );
+    }),
+  );
 }

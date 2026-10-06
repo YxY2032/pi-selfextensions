@@ -60,9 +60,11 @@ preamble 与锚共用唯一的 `before_agent_start` 处理器。
 3. ≥100 轮未回顾 → review 提醒
 4. ≥50 轮未检查 → status 提醒
 
-失败结果不计次、不提示。**提示以追加方式附在工具结果之后,绝不替换**——宿主的 tool_result
-content 返回值是整体替换语义(agent-session.ts 的 `hookResult?.content ?? result.content`),
-返回裸提示会把当轮工具输出挤掉。`before_agent_start` 复位运行计数(reviewCount 除外)。
+失败结果不计次、不提示。**status/review 提示经轮边界消息通道投递(ADR-0004)**:
+`pi.sendMessage(customType:"drift-guard-hint", triggerTurn)`——实测以 user 角色
+落在请求消息末尾(与用户 steer 同座,模型必读),工具结果不再被改写;
+`PI_DRIFT_HINT_CHANNEL=tail` 回退旧的工具结果尾巴通道(追加语义,绝不替换)作对照。
+转向/建档提示维持尾巴通道(单变量纪律)。`before_agent_start` 复位运行计数(reviewCount 除外)。
 
 **提示形态(ADR-0002,事实化家族)**:事实链 = 陈旧数字(已 X 轮未更新)+ 对照
 (Goal / 上条 Now(标注轮距) / 最近回顾自省,截断、注明来源、读失败降级)+ 后果事实
@@ -85,7 +87,7 @@ Goal)。总结的内容形状不归提示管——在 checkpoint 工具的参数
 | `index.ts` | preamble + 锚实现 |
 | `drift-guard.ts` | checkpoint 工具 + 节拍器 + 转向确认实现 |
 | `system-inject.test.mjs` | index.ts 单元测试,12 用例(运行:`node system-inject.test.mjs`) |
-| `drift-guard.test.mjs` | drift-guard 单元测试,28 用例(运行:`node drift-guard.test.mjs`) |
+| `drift-guard.test.mjs` | drift-guard 单元测试,29 用例(运行:`node drift-guard.test.mjs`) |
 | `bench-drift.mjs` | A/B 行为基准,4 场景(锚遵循/因果对照/零干预/任务切换;运行:`node bench-drift.mjs`,会发起 5 次真实 pi 调用) |
 | `trace-probe.ts` | 实机追踪探针(`-e` 显式加载):记录模型实收的 system 标记/steer 事件/工具调用时间线,附导航文件看门(哈希变化即快照);只记录零修改 |
 | `trace-report.mjs` | 会话分析器:checkpoint 调用、提示送达、工具统计;`--trace` 出"模型实收"判定,`--compliance` 出遵从率,`--nav` 出导航演化复盘(历史会话可无探针回放) |
@@ -122,6 +124,7 @@ Goal)。总结的内容形状不归提示管——在 checkpoint 工具的参数
 | drift-guard 独立文件 | 事件钩子多槽叠加,无 systemPrompt 单槽问题;与 index.ts 同包避免装两份 | 并入 index.ts(混合两类职责) |
 | 事实化提示家族(ADR-0002) | 祈使式建议在高强度任务流中注意力权重趋零(964 轮实测遵从率极低);三要素事实句让对照当场可完成,判断权仍归模型 | 提示升级阶梯(施压轨道,违最高原则) |
 | 三区制结构契约(ADR-0003) | 模型自建节两场被删、两次重造(实测);骨架最小封闭+保留区开放,位置即格式的一部分 | 原位保留(复杂度翻倍);领域节升骨架(焊入领域假设) |
+| 轮边界消息通道(ADR-0004) | 尾巴位置遵从率 59%,流中送达全无视、边界送达秒遵从;消息座位与 steer 同座,模型必读(实测暗号验证) | 语义时机检测(猜=脆弱);工具耗时代理(数据否决);进系统提示词(缓存红线) |
 | 节拍 50/100(ADR-0002) | 模型自然维护节奏 ≈140 轮/次,10/20 是其 7~14 倍;提示 132→~29 降噪约 78%,降频提高单条被读概率 | 保持 10/20(习惯化继续拉低权重) |
 | 双时钟分离(ADR-0002) | "已 X 轮未更新"必须反映文件内容新旧;提示若重置事实,数字永远≈间隔,失去意义 | 复用节拍时钟作事实基准 |
 
@@ -134,12 +137,12 @@ Goal)。总结的内容形状不归提示管——在 checkpoint 工具的参数
 `node system-inject.test.mjs` — 12 用例:preamble 注入位置、引导/状态两形态、
 Now 分离、无 Goal 兜底、信任门、截断、总开关、CRLF、空文件、无修改返回 undefined、
 快照滚动清理、尾部锚定(ADR-0001 不变量)。
-`node drift-guard.test.mjs` — 28 用例:工具注册/骨架/Now 覆盖/回顾落盘/折叠保留/宽容占位、
+`node drift-guard.test.mjs` — 29 用例:工具注册/骨架/Now 覆盖/回顾落盘/折叠保留/宽容占位、
 节拍 50/100 与同轮去重/时钟复位/失败不计次、转向全链(带 Goal 对照)/首条不误触/followUp 不武装、总开关
 (含无文档路径)、Goal 尾随空格防覆写、内联"### 回顾"防幻影块、读失败防覆写、
 提示追加保留工具输出(T7/T8/T12)、哲学红线零祈使句(T20)、直接写重置陈旧事实(T21)、
 读失败降级(T22)、回顾对照物(T23)、转向无文档降级(T24)、
-自定义节保留与归位(T25)、改名容错(T26)、results/next 参数(T27)、空占位提示(T28)。
+自定义节保留与归位(T25)、改名容错(T26)、results/next 参数(T27)、空占位提示(T28)、消息通道投递与旧通道对照(T29)。
 端到端:种带标记的 PROGRESS.md 后跑 `pi -p`,核验快照含 preamble+Goal+切换提示、不含 Now;
 实机追踪与"模型实收"判定见 [VERIFY.md](./VERIFY.md)(探针 + 会话分析器)。
 行为基准:`node bench-drift.mjs` — B1 锚遵循(含关阔回归对照)/ B2 零干预 / B3 任务切换。
