@@ -57,6 +57,13 @@ function quote(text: string, max = QUOTE_MAX): string {
   return t.length > max ? t.slice(0, max) + "…" : t;
 }
 
+// Goal 专用:首 60 + 尾 20——完成标准常写在 Goal 尾部,纯头部截断会砍掉衡量物
+function quoteGoal(text: string): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (t.length <= QUOTE_MAX) return t;
+  return t.slice(0, 60) + "…" + t.slice(t.length - 20);
+}
+
 // 回顾块解析:行首锚定,避免 reflect 文本中内联的 "### 回顾" 字样切出幻影块
 function parseReviews(c: string): string[] {
   const blocks: string[] = [];
@@ -109,14 +116,16 @@ function executeCheckpoint(params: { kind: "status" | "review"; status: string; 
   if (params.kind === "review") { lastReviewTurn = turnCount; lastActualReviewTurn = turnCount; }
 }
 
-// —— 事实化提示家族(ADR-0002):三要素 = 数字事实 + 对照物引用 + 疑问句/判断权声明。
-// 全家族零祈使句(哲学红线,单测 T20 固化);引用均截断、注明来源、读失败降级为纯数字事实。
+// —— 事实化提示家族(ADR-0002):事实链 = 陈旧数字 + Goal/Now/回顾对照(标注轮距与来源)
+// + 后果事实(未记入的进展压缩后可能丢失),收于恰一个判断权声明或疑问句。
+// 全家族零祈使句(哲学红线,单测 T20 固化);status 问记录差距,review 问方向。
+// 总结的内容形状不归提示管——在 checkpoint 工具的参数描述里(四要素)。
 
 function steerHint(): string {
   const raw = readNav();
   const goal = raw !== null ? extractGoal(raw) : "";
   const goalClause = goal && goal !== "(待补充)"
-    ? `当前 Goal(来自 ${STATE_FILE}):"${quote(goal)}";`
+    ? `当前 Goal(来自 ${STATE_FILE}):"${quoteGoal(goal)}";`
     : "";
   return `[转向提示] 有新的用户输入已注入;${goalClause}` +
     "新输入若改变任务目标→更新导航并记一句变更原因;若为细化→继续当前工作。判断在你。";
@@ -124,37 +133,42 @@ function steerHint(): string {
 
 function docHint(): string {
   return `[导航状态] 已 ${toolCalls} 次工具调用,无导航文件(${STATE_FILE})。` +
-    "当前进展仅存在于对话历史中(上下文压缩后不可恢复)。是否建立由你判断。";
+    "当前进展仅存在于对话历史中(上下文压缩后可能丢失)。是否建立由你判断。";
 }
 
 function statusHint(): string {
   const stale = turnCount - lastNavWriteTurn;
   const raw = readNav();
-  if (raw === null) return `[导航状态] 已 ${stale} 轮未更新。(${STATE_FILE} 读取失败)`;
+  if (raw === null) return `[导航状态] 导航已 ${stale} 轮未更新。(${STATE_FILE} 读取失败)`;
   const now = extractNow(raw);
   const goal = extractGoal(raw);
-  let s = `[导航状态] 已 ${stale} 轮未更新。`;
-  if (now) s += `上条 Now(来自 ${STATE_FILE}):"${quote(now)}"。`;
-  if (goal && goal !== "(待补充)") s += `整体 Goal(来自 ${STATE_FILE}):"${quote(goal)}"。`;
-  s += "当下流程与目标是否仍一致?";
+  let s = `[导航状态] 导航已 ${stale} 轮未更新。`;
+  if (goal && goal !== "(待补充)") s += `Goal:"${quoteGoal(goal)}"(来自 ${STATE_FILE})。`;
+  if (now) s += `上条 Now(${stale} 轮前):"${quote(now)}"。`;
+  s += "此后的进展未记入,压缩后可能丢失。是否记入、记什么,由你判断。";
   return s;
 }
 
 function reviewHint(): string {
   const stale = turnCount - lastActualReviewTurn;
-  let ref = "";
   const raw = readNav();
+  let s = `[回顾状态] 已 ${stale} 轮未深度回顾。`;
   if (raw !== null) {
+    const goal = extractGoal(raw);
+    if (goal && goal !== "(待补充)") s += `Goal:"${quoteGoal(goal)}"(来自 ${STATE_FILE})。`;
     const blocks = parseReviews(raw);
     if (blocks.length > 0) {
       const num = blocks[0].match(/^### 回顾 #(\d+)/)?.[1] ?? "?";
+      const at = Number(blocks[0].match(/约第 (\d+) 轮/)?.[1] ?? NaN);
       const self = blocks[0].match(/- 自省: (.+)/m)?.[1] ?? "";
-      ref = `最近回顾 #${num}:"${self ? quote(self, REVIEW_QUOTE_MAX) : "(无自省)"}";`;
+      const anchor = Number.isFinite(at) ? `(${turnCount - at} 轮前)` : "";
+      s += `最近回顾 #${num}${anchor}:"自省: ${self ? quote(self, REVIEW_QUOTE_MAX) : "(无)"}"。`;
     } else {
-      ref = "最近回顾:无记录;";
+      s += "最近回顾:无记录。";
     }
   }
-  return `[回顾状态] 已 ${stale} 轮未深度回顾;${ref}当前路线与 Goal 是否仍成立?`;
+  s += `这 ${stale} 轮的路线是否仍通向 Goal?`;
+  return s;
 }
 
 // 提示追加在工具结果之后,绝不替换——当轮工具输出是模型刚要的事实
@@ -212,13 +226,13 @@ export default function (pi) {
     name: "checkpoint",
     description:
       "阶段性导航维护工具。两种模式:\n" +
-      'kind="status":简要汇报当前进展与最新成果(约每 50 轮一次)。\n' +
+      'kind="status":简要汇报当前进展、成果与下一步(约每 50 轮一次)。\n' +
       'kind="review":深度回顾——对照任务导航自省:方向是否对准、哪些工作有效、' +
       "哪些无效、路线是否需要调整(约每 100 轮一次)。\n" +
       "汇报会自动同步进 PROGRESS.md(不存在则按标准骨架自动创建)。",
     parameters: Type.Object({
       kind: Type.String({ enum: ["status", "review"], description: "回顾类型:status=现状汇报,review=深度自省" }),
-      status: Type.String({ description: "现状:正在做什么、已有成果(可核对的事实优先:路径/命令/测试结果)" }),
+      status: Type.String({ description: "现状汇报,四要素:正在做什么、已完成或已验证的成果、做过的关键工作、下一步打算。可核对的事实优先(路径/命令/测试结果);对照上一条 Now,只记增量。" }),
       reflect: Type.Optional(Type.String({ description: "仅 review:自省——方向正确性、有效与无效的工作" })),
       adjust: Type.Optional(Type.String({ description: "仅 review:调整决定(无需调整请明说)" })),
     }),

@@ -39,8 +39,8 @@ node C:/Users/god/.pi/agent/selfextensions/system-inject/trace-report.mjs \
 | 锚·状态形态 | 种含 `## Goal` 的 PROGRESS.md 后提问 | 同上;systemdump 含 title+Goal |
 | 缓存红线 | 同上 | 判定 `Now泄漏=false` |
 | preamble | 任意提问 | `preamble到达=true` |
-| 节拍·status(50 轮,ADR-0002) | 连续跑 ≥50 轮工具调用 | `[导航状态]` 事实句:已 X 轮未更新 + Now/Goal 引用 + 疑问句;同轮不重复 |
-| 节拍·review(100 轮) | ≥100 轮未回顾 | `[回顾状态]`:已 X 轮未深度回顾 + 最近回顾自省引用 |
+| 节拍·status(50 轮,ADR-0002) | 连续跑 ≥50 轮工具调用 | `[导航状态]` 事实链:已 X 轮未更新 + Goal/Now 对照(标注轮距)+ 后果事实 + 判断权声明;同轮不重复 |
+| 节拍·review(100 轮) | ≥100 轮未回顾 | `[回顾状态]`:已 X 轮未深度回顾 + 最近回顾自省引用 + 方向疑问句 |
 | 建档提醒 | 无文档目录 ≥15 次工具调用 | `[导航状态] …无导航文件…` 恰一次 |
 | 陈旧事实 | 提示后模型直接 write PROGRESS.md | 下次提示的"已 X 轮未更新"从直接写入轮起算(双时钟分离) |
 | checkpoint | 对模型说"调用 checkpoint 汇报进展" | `[checkpoint 调用]` 列表 + PROGRESS.md 的 Now 更新 |

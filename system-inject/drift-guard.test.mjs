@@ -145,9 +145,11 @@ await withCase("T7 第 50 轮轻检查:同轮去重 + 消费后不顺延 + 追�
   const hint = first.content[1].text;
   assert.ok(hint.includes("[导航状态]"), "应为导航状态提示");
   assert.ok(hint.includes("已 50 轮未更新"), "数字事实(节拍首次到期,事实基准仍为 0)");
+  assert.ok(hint.includes("(50 轮前)"), "Now 引用应标注轮距作对照锚");
   assert.ok(hint.includes("进行中"), "应引用 Now 对照物");
   assert.ok(hint.includes(':"G"') && hint.includes("Goal"), "应引用 Goal 对照物");
-  assert.ok(hint.includes("是否仍一致"), "应以疑问句收尾");
+  assert.ok(hint.includes("压缩后可能丢失"), "应含后果事实");
+  assert.ok(hint.includes("由你判断"), "应以判断权声明收尾");
   const second = await fire("tool_result", { isError: false });
   assert.equal(second, undefined, "同轮去重");
   await fire("turn_end");
@@ -164,6 +166,7 @@ await withCase("T8 第 100 轮 review 优先于 status", async () => {
   assert.ok(r.content[0].text === "OUT", "原输出保留");
   assert.ok(r.content[1].text.includes("[回顾状态]"), "100 轮应为深度回顾");
   assert.ok(r.content[1].text.includes("未深度回顾"), "应含回顾陈旧事实");
+  assert.ok(r.content[1].text.includes("通向 Goal"), "review 问方向,与 status 的记录差距分工");
 });
 
 await withCase("T9 无文档 15 次提醒:仅一次且 10/20 节拍不生效", async () => {
@@ -354,6 +357,7 @@ await withCase("T23 review 对照物:引用最近回顾的自省", async () => {
   const r = await fire("tool_result", { isError: false, content: [{ type: "text", text: "O" }] });
   const hint = r.content[1].text;
   assert.ok(/最近回顾 #\d+/.test(hint), "应引用最近回顾编号(任务级连续)");
+  assert.ok(hint.includes("(100 轮前)"), "回顾引用应标注轮距");
   assert.ok(hint.includes("方向正确继续深入"), "应引用自省内容");
   assert.ok(hint.includes("已 100 轮未深度回顾"), "回顾陈旧事实以实际回顾轮为基准");
 });
