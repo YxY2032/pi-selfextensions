@@ -375,6 +375,58 @@ await withCase("T24 转向提示无文档时降级:保留事件事实,无 Goal �
   assert.ok(!hint.includes("Goal"), "无文档时不得引用 Goal");
 });
 
+// —— ADR-0003:三区制(受管节/保留区/回顾) ─────────────────────
+await withCase("T25 自定义节保留与归位(不再被重建删除)", async () => {
+  const { tool, reset } = load();
+  await reset();
+  writeFileSync("PROGRESS.md", [
+    "# 任务", "", "## Goal", "G", "",
+    "## 已完成题目", "| 题 | 分 |", "|---|---|", "| c-06 | 100 |", "",
+    "## Now", "- 旧状态", "",
+    "## 关键经验", "HugeGraph 用 Unsafe 改线程名绕沙箱", "",
+  ].join("\n"));
+  await tool.execute("id", { kind: "status", status: "新状态" });
+  const doc = readFileSync("PROGRESS.md", "utf8");
+  assert.ok(doc.includes("## 已完成题目") && doc.includes("| c-06 | 100 |"), "自定义表格必须原样保留");
+  assert.ok(doc.includes("## 关键经验") && doc.includes("Unsafe 改线程名"), "自定义经验节必须保留");
+  assert.ok(doc.includes("- 新状态") && !doc.includes("旧状态"), "Now 照常替换");
+  const iNow = doc.indexOf("## Now"), iNext = doc.indexOf("## 下一步"), iCustom = doc.indexOf("## 已完成题目");
+  assert.ok(iCustom > iNext && iNext > iNow, "顺序:Now → 下一步 → 自定义节(归位)");
+});
+
+await withCase("T26 改名容错:Now (最终) 视为本体,Now备忘 视为保留区", async () => {
+  const { tool, reset } = load();
+  await reset();
+  writeFileSync("PROGRESS.md", "# t\n\n## Goal\nG\n\n## Now (最终)\n- 旧\n\n## Now备忘\n- 这不是 Now\n");
+  await tool.execute("id", { kind: "status", status: "新" });
+  const doc = readFileSync("PROGRESS.md", "utf8");
+  assert.equal(doc.match(/^## Now(\s|$|（|\()/gm).length, 1, "只允许一个受管 Now 节(无双胞胎)");
+  assert.ok(doc.includes("- 新") && !doc.includes("- 旧"), "改名 Now 被当作本体替换");
+  assert.ok(doc.includes("## Now备忘") && doc.includes("这不是 Now"), "连续命名视为保留区");
+});
+
+await withCase("T27 results/next 参数:提供则替换,缺省保留原节", async () => {
+  const { tool, reset } = load();
+  await reset();
+  writeFileSync("PROGRESS.md", "# t\n\n## Goal\nG\n\n## Now\n- a\n\n## 成果\n旧成果\n\n## 下一步\n旧计划\n");
+  await tool.execute("id", { kind: "status", status: "S" }); // 不带 results/next
+  let doc = readFileSync("PROGRESS.md", "utf8");
+  assert.ok(doc.includes("旧成果") && doc.includes("旧计划"), "未提供参数时两节原样保留");
+  await tool.execute("id", { kind: "status", status: "S2", results: "19 题 4750 分", next: "a-14 → a-17" });
+  doc = readFileSync("PROGRESS.md", "utf8");
+  assert.ok(doc.includes("19 题 4750 分") && !doc.includes("旧成果"), "results 整节替换");
+  assert.ok(doc.includes("a-14 → a-17") && !doc.includes("旧计划"), "next 整节替换");
+});
+
+await withCase("T28 首建骨架含成果/下一步占位提示", async () => {
+  const { tool, reset } = load();
+  await reset();
+  await tool.execute("id", { kind: "status", status: "起步" });
+  const doc = readFileSync("PROGRESS.md", "utf8");
+  assert.ok(doc.includes("## 成果") && doc.includes("可核对的事实"), "成果节占位提示在");
+  assert.ok(doc.includes("## 下一步") && doc.includes("按优先级"), "下一步节占位提示在");
+});
+
 console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
 if (failed > 0) {
   console.log(failures.map(f => "  - " + f).join("\n"));

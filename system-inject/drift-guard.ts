@@ -64,18 +64,60 @@ function quoteGoal(text: string): string {
   return t.slice(0, 60) + "…" + t.slice(t.length - 20);
 }
 
-// 回顾块解析:行首锚定,避免 reflect 文本中内联的 "### 回顾" 字样切出幻影块
-function parseReviews(c: string): string[] {
-  const blocks: string[] = [];
-  const re = /^### 回顾[^\n]*/gm;
+// —— 分节解析(ADR-0003:三区制——受管节/保留区/回顾)——
+// 受管节:Goal/Now/成果/下一步(checkpoint 管辖);保留区:其余 ## 节原样穿越。
+// 改名容错:名字后跟空格或括号的变体("Now (最终)")视为本体;"Now备忘"视为保留区。
+
+interface NavSection {
+  heading: string; // 不含 "## " 前缀
+  body: string;
+}
+
+const isGoalHeading = (h: string) => /^Goal(\s|$|（|\()/.test(h);
+const isNowHeading = (h: string) => /^Now(\s|$|（|\()/.test(h);
+const isResultsHeading = (h: string) => /^成果(\s|$|（|\()/.test(h);
+const isNextHeading = (h: string) => /^下一步(\s|$|（|\()/.test(h);
+
+// 回顾块:行首锚定 + 强制编号(防自定义节正文里的 "### 回顾" 字样误切)
+function reviewRanges(c: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  const re = /^### 回顾 #\d+[^\n]*/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(c)) !== null) {
     const rest = c.slice(m.index + 1);
-    const next = rest.search(/\n(## |### 回顾)/);
+    const next = rest.search(/\n(## |### 回顾 #\d+)/);
     const end = next === -1 ? c.length : m.index + 1 + next;
-    blocks.push(c.slice(m.index, end).trim());
+    ranges.push([m.index, end]);
   }
-  return blocks;
+  return ranges;
+}
+
+function parseReviews(c: string): string[] {
+  return reviewRanges(c).map(([s, e]) => c.slice(s, e).trim());
+}
+
+function stripReviews(c: string): string {
+  let rest = c;
+  for (const [s, e] of reviewRanges(c).reverse()) {
+    rest = rest.slice(0, s) + rest.slice(e);
+  }
+  return rest;
+}
+
+function splitSections(c: string): NavSection[] {
+  const out: NavSection[] = [];
+  const re = /^## (.+)$/gm;
+  const marks: Array<{ heading: string; start: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(c)) !== null) {
+    marks.push({ heading: m[1].trim(), start: m.index });
+  }
+  for (let i = 0; i < marks.length; i++) {
+    const bodyStart = c.indexOf("\n", marks[i].start) + 1;
+    const bodyEnd = i + 1 < marks.length ? marks[i + 1].start : c.length;
+    out.push({ heading: marks[i].heading, body: c.slice(bodyStart, bodyEnd).trim() });
+  }
+  return out;
 }
 
 function flatten(s: string): string {
@@ -87,21 +129,38 @@ function buildNow(status: string): string {
   return `## Now\n${lines}`;
 }
 
-// checkpoint 落盘核心:每次调用都全文件重建(格式归位),
-// 保留 title/Goal 与最近回顾,Now 以本次汇报覆盖。
-function executeCheckpoint(params: { kind: "status" | "review"; status: string; reflect?: string; adjust?: string }): void {
+const RESULTS_PLACEHOLDER = "(已验证的结论与拿到的结果:分数、通过的测试、确认可行的解法——写可核对的事实)";
+const NEXT_PLACEHOLDER = "(接下来要做的事与候选思路,按优先级排列)";
+
+// checkpoint 落盘核心:三区制重建(ADR-0003)——
+// 受管节(Goal 穿越保留 / Now 与 成果/下一步 按参数替换、缺省保留)、
+// 保留区(自定义节原样搬运)、回顾区(追加+折叠)。格式归位由代码保证,模型只交内容。
+function executeCheckpoint(params: { kind: "status" | "review"; status: string; results?: string; next?: string; reflect?: string; adjust?: string }): void {
   const exists = existsSync(STATE_FILE);
   // 读失败 ≠ 不存在:文件在但读不了时中止,绝不用占位符覆写它
   const current = exists ? readNav() : null;
   if (exists && current === null) throw new Error(`${STATE_FILE} 存在但读取失败,已中止本次落盘以保护原内容`);
-  const title = current ? extractTitle(current) : "(任务标题)";
-  const goal = current ? extractGoal(current) : "(待补充)";
-  const oldReviews = current ? parseReviews(current) : [];
-  // 文档顺序即最新在前:保住最近的 (REVIEWS_KEPT-1) 个旧块
-  const kept = oldReviews.slice(0, Math.max(0, REVIEWS_KEPT - 1));
 
-  const doc = [`# ${title}`, `## Goal\n${goal}`, buildNow(params.status)].join("\n\n") + "\n";
-  let out = doc;
+  const title = current ? extractTitle(current) : "(任务标题)";
+  const sections = current ? splitSections(stripReviews(current)) : [];
+  const sec = (pred: (h: string) => boolean) => sections.find((s) => pred(s.heading));
+  const goal = sec(isGoalHeading)?.body.trim() || "(待补充)";
+  const results = params.results?.trim() || sec(isResultsHeading)?.body.trim() || "";
+  const next = params.next?.trim() || sec(isNextHeading)?.body.trim() || "";
+  const customs = sections.filter(
+    (s) => !isGoalHeading(s.heading) && !isNowHeading(s.heading) && !isResultsHeading(s.heading) && !isNextHeading(s.heading),
+  );
+  const kept = (current ? parseReviews(current) : []).slice(0, Math.max(0, REVIEWS_KEPT - 1));
+
+  const parts: string[] = [
+    `# ${title}`,
+    `## Goal\n${goal}`,
+    buildNow(params.status),
+    `## 成果\n${results || RESULTS_PLACEHOLDER}`,
+    `## 下一步\n${next || NEXT_PLACEHOLDER}`,
+  ];
+  for (const s of customs) parts.push(`## ${s.heading}\n${s.body}`);
+  let out = parts.join("\n\n") + "\n";
   if (params.kind === "review") {
     reviewCount += 1;
     out += `\n### 回顾 #${reviewCount}(约第 ${turnCount} 轮)\n` +
@@ -226,13 +285,17 @@ export default function (pi) {
     name: "checkpoint",
     description:
       "阶段性导航维护工具。两种模式:\n" +
-      'kind="status":简要汇报当前进展、成果与下一步(约每 50 轮一次)。\n' +
+      'kind="status":简要汇报当前进展(约每 50 轮一次)。\n' +
       'kind="review":深度回顾——对照任务导航自省:方向是否对准、哪些工作有效、' +
       "哪些无效、路线是否需要调整(约每 100 轮一次)。\n" +
-      "汇报会自动同步进 PROGRESS.md(不存在则按标准骨架自动创建)。",
+      "status→Now 节整节替换;可选 results→成果节、next→下一步节(提供才替换,不提供则保留原节)。\n" +
+      "标题、Goal、回顾、以及你自己添加的其他小节(表格/清单/经验)一律原样保留。" +
+      "PROGRESS.md 不存在则按标准骨架自动创建。",
     parameters: Type.Object({
       kind: Type.String({ enum: ["status", "review"], description: "回顾类型:status=现状汇报,review=深度自省" }),
       status: Type.String({ description: "现状汇报,四要素:正在做什么、已完成或已验证的成果、做过的关键工作、下一步打算。可核对的事实优先(路径/命令/测试结果);对照上一条 Now,只记增量。" }),
+      results: Type.Optional(Type.String({ description: "成果节(可选,提供则整节替换):已验证的结论与拿到的结果——分数、通过的测试、确认可行的解法,写可核对的事实" })),
+      next: Type.Optional(Type.String({ description: "下一步节(可选,提供则整节替换):接下来要做的事与候选思路,按优先级排列" })),
       reflect: Type.Optional(Type.String({ description: "仅 review:自省——方向正确性、有效与无效的工作" })),
       adjust: Type.Optional(Type.String({ description: "仅 review:调整决定(无需调整请明说)" })),
     }),
