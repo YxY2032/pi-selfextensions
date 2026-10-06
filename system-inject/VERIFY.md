@@ -39,11 +39,13 @@ node C:/Users/god/.pi/agent/selfextensions/system-inject/trace-report.mjs \
 | 锚·状态形态 | 种含 `## Goal` 的 PROGRESS.md 后提问 | 同上;systemdump 含 title+Goal |
 | 缓存红线 | 同上 | 判定 `Now泄漏=false` |
 | preamble | 任意提问 | `preamble到达=true` |
-| 节拍·status | 连续跑 ≥10 轮工具调用 | `[检查点` 提示出现;同轮不重复 |
-| 节拍·review | ≥20 轮未回顾 | `[回顾点` 出现且优先于检查点 |
-| 建档提醒 | 无文档目录 ≥15 次工具调用 | `[系统观察]` 恰一次 |
+| 节拍·status(50 轮,ADR-0002) | 连续跑 ≥50 轮工具调用 | `[导航状态]` 事实句:已 X 轮未更新 + Now/Goal 引用 + 疑问句;同轮不重复 |
+| 节拍·review(100 轮) | ≥100 轮未回顾 | `[回顾状态]`:已 X 轮未深度回顾 + 最近回顾自省引用 |
+| 建档提醒 | 无文档目录 ≥15 次工具调用 | `[导航状态] …无导航文件…` 恰一次 |
+| 陈旧事实 | 提示后模型直接 write PROGRESS.md | 下次提示的"已 X 轮未更新"从直接写入轮起算(双时钟分离) |
 | checkpoint | 对模型说"调用 checkpoint 汇报进展" | `[checkpoint 调用]` 列表 + PROGRESS.md 的 Now 更新 |
-| 转向确认 | 流式回答进行中**直接 Enter** 提交新消息 | 探针 `输入 behavior=steer` → 下一个工具结果附 `[转向提示]`,仅一次 |
+| 遵从率(ADR-0002 判据) | 会话结束跑 `--compliance` | status/review 提示后 25 轮内有导航更新的比例;≥40% 有效 / 10-40% 调参 / <10% 回滚 |
+| 转向确认 | 流式回答进行中**直接 Enter** 提交新消息 | 探针 `输入 behavior=steer` → 下一个工具结果附 `[转向提示]`(含当前 Goal 对照),仅一次 |
 | followUp 不触发 | 流式中 **Ctrl+Q** 提交 | `behavior=followUp`,无转向提示 |
 
 Windows TUI 键位(0.86.1 默认):流式中 Enter=steer(打断当前流),Ctrl+Q=followUp(排队到轮末)。

@@ -23,8 +23,8 @@ selfextensions/
 ├── system-inject/          ← [注入与导航] pi 包(唯一导航系统,ADR-0001)
 │   ├── index.ts            ←    preamble + 导航锚
 │   ├── drift-guard.ts      ←    checkpoint 工具 + 节拍器 + 转向确认
-│   ├── trace-probe.ts / trace-report.mjs / VERIFY.md  ← 实机追踪与验证
-│   └── *.test.mjs / bench-drift.mjs                    ← 单测(12+19)与行为基准
+│   ├── trace-probe.ts / trace-report.mjs / VERIFY.md  ← 实机追踪与验证(--compliance 遵从率)
+│   └── *.test.mjs / bench-drift.mjs                    ← 单测(12+24)与行为基准
 └── pi-plan/                ← [工作流] 已存档(ADR-0001)
 ```
 
@@ -72,6 +72,6 @@ git clone git@github.com:YxY2032/pi-selfextensions.git ~/.pi/agent/selfextension
 ```bash
 cd system-inject
 node system-inject.test.mjs   # 12 单元用例(无需网络)
-node drift-guard.test.mjs     # 19 单元用例(无需网络)
+node drift-guard.test.mjs     # 24 单元用例(无需网络)
 node bench-drift.mjs          # 4 场景 A/B 行为基准(5 次真实 pi 调用)
 ```

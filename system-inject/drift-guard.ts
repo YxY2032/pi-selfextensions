@@ -7,16 +7,22 @@ import { Type } from "typebox";
 // 设计与决策记录见同目录 README.md。PI_DRIFT_GUARD=off 时全部静默。
 
 const STATE_FILE = "PROGRESS.md";
-const STATUS_EVERY = 10;  // 轻检查间隔(轮)
-const REVIEW_EVERY = 20;  // 深度回顾间隔(轮)
+const STATUS_EVERY = 50;  // 轻检查间隔(轮)——ADR-0002:贴近实测自然维护节奏(≈140 轮/次),降噪约 90%
+const REVIEW_EVERY = 100; // 深度回顾间隔(轮)
 const BRIEF_AFTER = 15;   // 无文档时,工具调用达到此次数提醒建文档(仅一次)
 const REVIEWS_KEPT = 3;   // 回顾史限留段数
+const QUOTE_MAX = 80;     // 提示中 Now/Goal 引用截断
+const REVIEW_QUOTE_MAX = 60; // 提示中回顾自省截断
 
 const enabled = () => process.env.PI_DRIFT_GUARD !== "off";
 
 // —— 运行状态(before_agent_start 复位;reviewCount 为任务级,跨运行连续)
+// 双时钟分离(ADR-0002):lastStatusTurn/lastReviewTurn 是节拍时钟(提示即消费,防逐轮轰炸);
+// lastNavWriteTurn/lastActualReviewTurn 是陈旧事实基准——只有真实导航更新(checkpoint
+// 或直接写文件)才推进,"已 X 轮未更新"的 X 由它计算,提示本身绝不重置事实。
 let turnCount = 0, toolCalls = 0;
 let lastStatusTurn = 0, lastReviewTurn = 0, lastNudgedTurn = -1;
+let lastNavWriteTurn = 0, lastActualReviewTurn = 0;
 let docReminded = false, reviewCount = 0;
 let seenInitialUser = false, steerArmed = false, nudgeSteerNext = false;
 
@@ -38,6 +44,17 @@ function extractTitle(c: string): string {
 function extractGoal(c: string): string {
   const m = c.match(/## Goal[ \t]*\n([\s\S]*?)(?=\n## |$)/);
   return m ? m[1].trim() : "(待补充)";
+}
+
+function extractNow(c: string): string {
+  const m = c.match(/## Now[ \t]*\n([\s\S]*?)(?=\n## |$)/);
+  return m ? m[1].trim() : "";
+}
+
+// 引用裁剪:压成单行 + 截断——提示必须紧凑,变长就重新变成壁纸
+function quote(text: string, max = QUOTE_MAX): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > max ? t.slice(0, max) + "…" : t;
 }
 
 // 回顾块解析:行首锚定,避免 reflect 文本中内联的 "### 回顾" 字样切出幻影块
@@ -88,26 +105,56 @@ function executeCheckpoint(params: { kind: "status" | "review"; status: string; 
   writeFileSync(STATE_FILE, out);
 
   lastStatusTurn = turnCount;
-  if (params.kind === "review") lastReviewTurn = turnCount;
+  lastNavWriteTurn = turnCount;
+  if (params.kind === "review") { lastReviewTurn = turnCount; lastActualReviewTurn = turnCount; }
 }
 
-const STEER_HINT =
-  "[转向提示] 有新的用户输入已注入。若它改变了任务的目标或方向,建议调用 checkpoint " +
-  "更新导航(Now 反映新意图;目标变了则更新 Goal 并记一句变更原因)。" +
-  "若只是对当前工作的细化或补充,忽略本提示即可。";
+// —— 事实化提示家族(ADR-0002):三要素 = 数字事实 + 对照物引用 + 疑问句/判断权声明。
+// 全家族零祈使句(哲学红线,单测 T20 固化);引用均截断、注明来源、读失败降级为纯数字事实。
 
-const DOC_HINT =
-  `[系统观察] 本任务已进行约 ${BRIEF_AFTER} 次工具调用,规模不小了。` +
-  "建议建立 PROGRESS.md 导航文件(目标+当前状态)——它会在每次新对话时自动带回。" +
-  "若认为无必要,忽略即可。";
+function steerHint(): string {
+  const raw = readNav();
+  const goal = raw !== null ? extractGoal(raw) : "";
+  const goalClause = goal && goal !== "(待补充)"
+    ? `当前 Goal(来自 ${STATE_FILE}):"${quote(goal)}";`
+    : "";
+  return `[转向提示] 有新的用户输入已注入;${goalClause}` +
+    "新输入若改变任务目标→更新导航并记一句变更原因;若为细化→继续当前工作。判断在你。";
+}
+
+function docHint(): string {
+  return `[导航状态] 已 ${toolCalls} 次工具调用,无导航文件(${STATE_FILE})。` +
+    "当前进展仅存在于对话历史中(上下文压缩后不可恢复)。是否建立由你判断。";
+}
 
 function statusHint(): string {
-  return `[检查点 · 第 ${turnCount} 轮] 建议调用 checkpoint(kind="status")简要汇报当前进展。`;
+  const stale = turnCount - lastNavWriteTurn;
+  const raw = readNav();
+  if (raw === null) return `[导航状态] 已 ${stale} 轮未更新。(${STATE_FILE} 读取失败)`;
+  const now = extractNow(raw);
+  const goal = extractGoal(raw);
+  let s = `[导航状态] 已 ${stale} 轮未更新。`;
+  if (now) s += `上条 Now(来自 ${STATE_FILE}):"${quote(now)}"。`;
+  if (goal && goal !== "(待补充)") s += `整体 Goal(来自 ${STATE_FILE}):"${quote(goal)}"。`;
+  s += "当下流程与目标是否仍一致?";
+  return s;
 }
 
 function reviewHint(): string {
-  return `[回顾点 · 第 ${turnCount} 轮] 建议调用 checkpoint(kind="review"):` +
-    "回顾方向是否仍对准任务导航,哪些工作有效、哪些无效,是否需要调整路线。";
+  const stale = turnCount - lastActualReviewTurn;
+  let ref = "";
+  const raw = readNav();
+  if (raw !== null) {
+    const blocks = parseReviews(raw);
+    if (blocks.length > 0) {
+      const num = blocks[0].match(/^### 回顾 #(\d+)/)?.[1] ?? "?";
+      const self = blocks[0].match(/- 自省: (.+)/m)?.[1] ?? "";
+      ref = `最近回顾 #${num}:"${self ? quote(self, REVIEW_QUOTE_MAX) : "(无自省)"}";`;
+    } else {
+      ref = "最近回顾:无记录;";
+    }
+  }
+  return `[回顾状态] 已 ${stale} 轮未深度回顾;${ref}当前路线与 Goal 是否仍成立?`;
 }
 
 // 提示追加在工具结果之后,绝不替换——当轮工具输出是模型刚要的事实
@@ -115,23 +162,36 @@ function appendHint(event: { content?: unknown[] }, hint: string) {
   return { content: [...(event.content ?? []), { type: "text", text: hint }] };
 }
 
-// 节拍器:优先级 转向确认 > 建文档提醒(仅一次) > review(20) > status(10);
-// 同轮去重:lastNudgedTurn 守卫;提示即消费时钟,避免逐轮轰炸。
-function onToolResult(event: { isError?: boolean; content?: unknown[] }) {
+// 直接导航更新检测:模型绕过 checkpoint 直接 write/edit 导航文件也算真实更新
+// (陈旧事实必须反映文件内容的新旧,而不是工具的选择——虚假的"已 X 轮未更新"比没有更糟)
+function isDirectNavWrite(event: { toolName?: string; input?: unknown }): boolean {
+  if (event.toolName !== "write" && event.toolName !== "edit") return false;
+  try {
+    return JSON.stringify(event.input ?? {}).includes(STATE_FILE);
+  } catch {
+    return false;
+  }
+}
+
+// 节拍器:优先级 转向确认 > 建文档提醒(仅一次) > review > status;
+// 同轮去重:lastNudgedTurn 守卫;提示即消费节拍时钟,避免逐轮轰炸。
+function onToolResult(event: { isError?: boolean; content?: unknown[]; toolName?: string; input?: unknown }) {
   if (!enabled()) return undefined;
   if (event.isError) return undefined;
   toolCalls++;
 
+  if (isDirectNavWrite(event)) lastNavWriteTurn = turnCount;
+
   if (nudgeSteerNext) {
     nudgeSteerNext = false;
     lastNudgedTurn = turnCount;
-    return appendHint(event, STEER_HINT);
+    return appendHint(event, steerHint());
   }
 
   if (!existsSync(STATE_FILE)) {
     if (!docReminded && toolCalls >= BRIEF_AFTER) {
       docReminded = true;
-      return appendHint(event, DOC_HINT);
+      return appendHint(event, docHint());
     }
     return undefined;
   }
@@ -152,9 +212,9 @@ export default function (pi) {
     name: "checkpoint",
     description:
       "阶段性导航维护工具。两种模式:\n" +
-      'kind="status":简要汇报当前进展与最新成果(约每 10 轮一次)。\n' +
+      'kind="status":简要汇报当前进展与最新成果(约每 50 轮一次)。\n' +
       'kind="review":深度回顾——对照任务导航自省:方向是否对准、哪些工作有效、' +
-      "哪些无效、路线是否需要调整(约每 20 轮一次)。\n" +
+      "哪些无效、路线是否需要调整(约每 100 轮一次)。\n" +
       "汇报会自动同步进 PROGRESS.md(不存在则按标准骨架自动创建)。",
     parameters: Type.Object({
       kind: Type.String({ enum: ["status", "review"], description: "回顾类型:status=现状汇报,review=深度自省" }),
@@ -184,6 +244,7 @@ export default function (pi) {
     if (!enabled()) return undefined;
     turnCount = 0; toolCalls = 0;
     lastStatusTurn = 0; lastReviewTurn = 0; lastNudgedTurn = -1;
+    lastNavWriteTurn = 0; lastActualReviewTurn = 0;
     docReminded = false;
     seenInitialUser = false; steerArmed = false; nudgeSteerNext = false;
     return undefined;

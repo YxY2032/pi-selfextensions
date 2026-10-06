@@ -12,7 +12,8 @@ import { homedir } from "node:os";
 const args = process.argv.slice(2);
 const traceIdx = args.indexOf("--trace");
 const traceFile = traceIdx >= 0 ? args.splice(traceIdx, 2)[1] : undefined;
-const target = args[0];
+const compliance = args.includes("--compliance");
+const target = args.filter((a) => a !== "--compliance")[0];
 
 // ── 定位会话文件 ─────────────────────────────────────────────
 function newestSession(root) {
@@ -46,10 +47,20 @@ const sysEntries = [];
 const runs = [];
 const checkpoints = [];
 const hints = [];
+const navUpdates = [];
 const toolCounts = {};
 let assistantTurns = 0;
 
-const HINT_PREFIXES = ["[检查点", "[回顾点", "[系统观察]", "[转向提示]"];
+// 新前缀(ADR-0002)+ 旧前缀(向后兼容,便于对历史会话复算基线)
+const HINT_PREFIXES = ["[导航状态", "[回顾状态", "[转向提示]", "[检查点", "[回顾点", "[系统观察]"];
+const COMPLIANCE_WINDOW = 25; // 遵从窗口:提示后 N 轮内发生导航更新(ADR-0002 判据)
+
+function hintKind(text) {
+  if (text.includes("[回顾状态") || text.includes("[回顾点")) return "review";
+  if (text.includes("[转向提示]")) return "steer";
+  if (text.includes("无导航文件")) return "doc";
+  return "status"; // [导航状态] / [检查点] / [系统观察]
+}
 
 for (const e of entries) {
   if (e.type !== "message") continue;
@@ -75,13 +86,19 @@ for (const e of entries) {
           kind: c.arguments?.kind,
           status: String(c.arguments?.status ?? "").slice(0, 60).replace(/\n/g, " "),
         });
+        navUpdates.push({ turn: assistantTurns, via: "checkpoint" });
+      }
+      if (c.type === "toolCall" && (c.name === "write" || c.name === "edit")) {
+        if (JSON.stringify(c.arguments ?? {}).includes("PROGRESS.md")) {
+          navUpdates.push({ turn: assistantTurns, via: c.name });
+        }
       }
     }
   } else if (m.role === "toolResult") {
     toolCounts[m.toolName] = (toolCounts[m.toolName] ?? 0) + 1;
     for (const c of m.content ?? []) {
       const hit = HINT_PREFIXES.find((p) => typeof c.text === "string" && c.text.includes(p));
-      if (hit) hints.push({ ts: e.timestamp, tool: m.toolName, kind: hit });
+      if (hit) hints.push({ ts: e.timestamp, turn: assistantTurns, tool: m.toolName, kind: hintKind(c.text) });
     }
   }
 }
@@ -99,7 +116,25 @@ console.log(`\n[checkpoint 调用] 共 ${checkpoints.length} 次`);
 for (const c of checkpoints) console.log(`  ${c.ts} 第${c.turn}轮 kind=${c.kind} | ${c.status}`);
 
 console.log(`\n[节拍/转向提示送达] 共 ${hints.length} 次`);
-for (const h of hints) console.log(`  ${h.ts} ${h.kind} (附于 ${h.tool} 结果)`);
+for (const h of hints) console.log(`  ${h.ts} 第${h.turn}轮 [${h.kind}] (附于 ${h.tool} 结果)`);
+
+// ── 遵从率(ADR-0002 判据;--compliance)──────────────────────
+if (compliance) {
+  const measured = hints.filter((h) => h.kind === "status" || h.kind === "review");
+  let complied = 0;
+  console.log(`\n[遵从率] 窗口=提示后 ${COMPLIANCE_WINDOW} 轮内发生导航更新(checkpoint 或直接写 PROGRESS.md)`);
+  for (const h of measured) {
+    const ok = navUpdates.some((u) => u.turn > h.turn && u.turn <= h.turn + COMPLIANCE_WINDOW);
+    if (ok) complied++;
+    console.log(`  第${h.turn}轮 [${h.kind}] → ${ok ? "遵从" : "未遵从"}`);
+  }
+  const rate = measured.length > 0 ? Math.round((complied / measured.length) * 100) : null;
+  console.log(`  合计: ${complied}/${measured.length}${rate !== null ? ` = ${rate}%` : ""}` +
+    ` | 导航更新共 ${navUpdates.length} 次(checkpoint ${checkpoints.length} + 直接写 ${navUpdates.length - checkpoints.length})` +
+    ` | 建档提示 ${hints.filter((h) => h.kind === "doc").length} 次、转向提示 ${hints.filter((h) => h.kind === "steer").length} 次(不计入遵从率)`);
+  console.log(`  判据(ADR-0002): ≥40% 有效 / 10%~40% 调参再测 / <10% 措辞回滚` +
+    `${rate === null ? "\n  (本会话无可测提示——节拍未触发或旧前缀不匹配)" : ""}`);
+}
 
 const top = Object.entries(toolCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
 console.log(`\n[工具调用 Top] ${top.map(([n, c]) => `${n}=${c}`).join("  ")}`);

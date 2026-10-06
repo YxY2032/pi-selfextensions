@@ -135,29 +135,35 @@ async function seedDoc() {
   writeFileSync("PROGRESS.md", "# 任务\n## Goal\nG\n## Now\n- 进行中\n");
 }
 
-await withCase("T7 第 10 轮轻检查:同轮去重 + 消费后不顺延 + 追加不替换", async () => {
+await withCase("T7 第 50 轮轻检查:同轮去重 + 消费后不顺延 + 追加不替换 + 三要素", async () => {
   const { fire, reset } = load();
   await reset();
   await seedDoc();
-  for (let i = 0; i < 10; i++) await fire("turn_end");
+  for (let i = 0; i < 50; i++) await fire("turn_end");
   const first = await fire("tool_result", { isError: false, content: [{ type: "text", text: "工具真实输出" }] });
   assert.equal(first.content[0].text, "工具真实输出", "原工具输出必须保留");
-  assert.ok(first.content[1].text.includes('kind="status"'), "提示追加在其后");
+  const hint = first.content[1].text;
+  assert.ok(hint.includes("[导航状态]"), "应为导航状态提示");
+  assert.ok(hint.includes("已 50 轮未更新"), "数字事实(节拍首次到期,事实基准仍为 0)");
+  assert.ok(hint.includes("进行中"), "应引用 Now 对照物");
+  assert.ok(hint.includes(':"G"') && hint.includes("Goal"), "应引用 Goal 对照物");
+  assert.ok(hint.includes("是否仍一致"), "应以疑问句收尾");
   const second = await fire("tool_result", { isError: false });
   assert.equal(second, undefined, "同轮去重");
   await fire("turn_end");
   const third = await fire("tool_result", { isError: false });
-  assert.equal(third, undefined, "提示已消费时钟,下一轮不应立即再响");
+  assert.equal(third, undefined, "提示已消费节拍时钟,下一轮不应立即再响");
 });
 
-await withCase("T8 第 20 轮 review 优先于 status", async () => {
+await withCase("T8 第 100 轮 review 优先于 status", async () => {
   const { fire, reset } = load();
   await reset();
   await seedDoc();
-  for (let i = 0; i < 20; i++) await fire("turn_end");
+  for (let i = 0; i < 100; i++) await fire("turn_end");
   const r = await fire("tool_result", { isError: false, content: [{ type: "text", text: "OUT" }] });
   assert.ok(r.content[0].text === "OUT", "原输出保留");
-  assert.ok(r.content[1].text.includes('kind="review"'), "20 轮应为深度回顾");
+  assert.ok(r.content[1].text.includes("[回顾状态]"), "100 轮应为深度回顾");
+  assert.ok(r.content[1].text.includes("未深度回顾"), "应含回顾陈旧事实");
 });
 
 await withCase("T9 无文档 15 次提醒:仅一次且 10/20 节拍不生效", async () => {
@@ -174,7 +180,7 @@ await withCase("T10 checkpoint 复位时钟:回顾后不重复提示", async () 
   const { tool, fire, reset } = load();
   await reset();
   await seedDoc();
-  for (let i = 0; i < 10; i++) await fire("turn_end");
+  for (let i = 0; i < 50; i++) await fire("turn_end");
   await fire("tool_result", { isError: false });            // 消费 status 窗口
   await tool.execute("id", { kind: "status", status: "汇报" }); // 时钟复位
   await fire("turn_end");
@@ -191,7 +197,7 @@ await withCase("T11 失败结果:不计数、不提示", async () => {
 });
 
 // ── 转向确认 ─────────────────────────────────────────────────
-await withCase("T12 转向全链:武装→送达→消费一次性", async () => {
+await withCase("T12 转向全链:武装→送达→消费一次性(带 Goal 对照)", async () => {
   const { fire, reset } = load();
   await reset();
   await seedDoc();
@@ -202,7 +208,9 @@ await withCase("T12 转向全链:武装→送达→消费一次性", async () =>
   const r = await fire("tool_result", { isError: false, content: [{ type: "text", text: "OUT" }] });
   assert.ok(r.content[0].text === "OUT", "原输出保留");
   assert.ok(r.content[1].text.includes("转向提示"), "应搭转向提示");
-  assert.ok(r.content[1].text.includes("细化或补充"), "文案应中性(覆盖细化场景)");
+  assert.ok(r.content[1].text.includes("细化"), "文案应含细化分支");
+  assert.ok(r.content[1].text.includes(':"G"'), "应引用当前 Goal 作对照");
+  assert.ok(r.content[1].text.includes("判断在你"), "判断权声明应在");
   const again = await fire("tool_result", { isError: false });
   assert.equal(again, undefined, "一次性消费");
 });
@@ -274,6 +282,93 @@ await withCase("T19 文件存在但读失败:中止落盘,不覆写", async () =
   await assert.rejects(() => tool.execute("id", { kind: "status", status: "X" }),
     /读取失败|中止/, "应抛错而非覆写");
   assert.ok(statSync("PROGRESS.md").isDirectory(), "原路径未被破坏");
+});
+
+// —— ADR-0002:事实化提示家族 ─────────────────────────────────
+await withCase("T20 哲学红线:全部提示文案零祈使句", async () => {
+  const IMPERATIVE = /建议|请|必须|应该|务必/;
+  const texts = [];
+  { // status
+    const { fire, reset } = load();
+    await reset(); await seedDoc();
+    for (let i = 0; i < 50; i++) await fire("turn_end");
+    texts.push((await fire("tool_result", { isError: false })).content[0].text);
+  }
+  { // review
+    const { fire, reset } = load();
+    await reset(); await seedDoc();
+    for (let i = 0; i < 100; i++) await fire("turn_end");
+    texts.push((await fire("tool_result", { isError: false })).content[0].text);
+  }
+  { // doc(须清掉前面块种的文件,否则走不到建档分支)
+    const { fire, reset } = load();
+    await reset();
+    rmSync("PROGRESS.md", { force: true });
+    for (let i = 0; i < 14; i++) await fire("tool_result", { isError: false });
+    texts.push((await fire("tool_result", { isError: false })).content[0].text);
+  }
+  { // steer
+    const { fire, reset } = load();
+    await reset(); await seedDoc();
+    await fire("message_start", { message: { role: "user" } });
+    await fire("input", { streamingBehavior: "steer" });
+    await fire("message_start", { message: { role: "user" } });
+    texts.push((await fire("tool_result", { isError: false })).content[0].text);
+  }
+  assert.equal(texts.length, 4);
+  for (const t of texts) {
+    assert.ok(!IMPERATIVE.test(t), `提示含祈使标记: ${t}`);
+  }
+});
+
+await withCase("T21 直接 write 重置陈旧事实:数字反映真实文件更新", async () => {
+  const { fire, reset } = load();
+  await reset();
+  await seedDoc();
+  for (let i = 0; i < 25; i++) await fire("turn_end");
+  await fire("tool_result", { isError: false, toolName: "write", input: { path: "PROGRESS.md", content: "..." } }); // 第25轮直接写
+  for (let i = 0; i < 25; i++) await fire("turn_end"); // 至第50轮(status 到期,review 未到)
+  const r = await fire("tool_result", { isError: false, content: [{ type: "text", text: "O" }] });
+  const hint = r.content[1].text;
+  assert.ok(hint.includes("已 25 轮未更新"), `应以直接写入轮为基准(50-25),实际: ${hint}`);
+  assert.ok(!hint.includes("已 50 轮"), "不得以会话起点为事实基准");
+});
+
+await withCase("T22 读失败降级:纯数字事实,不引用对照物", async () => {
+  const { fire, reset } = load();
+  await reset();
+  mkdirSync("PROGRESS.md"); // EISDIR
+  for (let i = 0; i < 50; i++) await fire("turn_end");
+  const r = await fire("tool_result", { isError: false, content: [{ type: "text", text: "O" }] });
+  const hint = r.content[1].text;
+  assert.ok(hint.includes("[导航状态]") && hint.includes("读取失败"), "应声明读取失败");
+  assert.ok(!hint.includes("上条 Now"), "不得伪造对照物");
+});
+
+await withCase("T23 review 对照物:引用最近回顾的自省", async () => {
+  const { tool, fire, reset } = load();
+  await reset();
+  await seedDoc();
+  await tool.execute("id", { kind: "review", status: "S", reflect: "方向正确继续深入", adjust: "A" });
+  for (let i = 0; i < 100; i++) await fire("turn_end");
+  const r = await fire("tool_result", { isError: false, content: [{ type: "text", text: "O" }] });
+  const hint = r.content[1].text;
+  assert.ok(/最近回顾 #\d+/.test(hint), "应引用最近回顾编号(任务级连续)");
+  assert.ok(hint.includes("方向正确继续深入"), "应引用自省内容");
+  assert.ok(hint.includes("已 100 轮未深度回顾"), "回顾陈旧事实以实际回顾轮为基准");
+});
+
+await withCase("T24 转向提示无文档时降级:保留事件事实,无 Goal 引用", async () => {
+  const { fire, reset } = load();
+  await reset();
+  await fire("message_start", { message: { role: "user" } });
+  await fire("tool_result", { isError: false });
+  await fire("input", { streamingBehavior: "steer" });
+  await fire("message_start", { message: { role: "user" } });
+  const r = await fire("tool_result", { isError: false, content: [{ type: "text", text: "O" }] });
+  const hint = r.content[1].text;
+  assert.ok(hint.includes("转向提示") && hint.includes("有新的用户输入"), "事件事实保留");
+  assert.ok(!hint.includes("Goal"), "无文档时不得引用 Goal");
 });
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
