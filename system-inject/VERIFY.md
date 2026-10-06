@@ -45,6 +45,7 @@ node C:/Users/god/.pi/agent/selfextensions/system-inject/trace-report.mjs \
 | 陈旧事实 | 提示后模型直接 write PROGRESS.md | 下次提示的"已 X 轮未更新"从直接写入轮起算(双时钟分离) |
 | checkpoint | 对模型说"调用 checkpoint 汇报进展" | `[checkpoint 调用]` 列表 + PROGRESS.md 的 Now 更新 |
 | 遵从率(ADR-0002 判据) | 会话结束跑 `--compliance` | status/review 提示后 25 轮内有导航更新的比例;≥40% 有效 / 10-40% 调参 / <10% 回滚 |
+| 导航演化复盘(`--nav`) | 会话结束跑 `--nav`(可无探针,历史会话可回放) | 演化时间线:每次写入的轮次/途径/内容(checkpoint 参数、write 全文、edit 新旧串);探针在场时另有哈希去重的文件快照(地面真值,含 bash 绕路写入)。审阅四项:四要素覆盖/事实密度/增量性/时间线一致性 |
 | 转向确认 | 流式回答进行中**直接 Enter** 提交新消息 | 探针 `输入 behavior=steer` → 下一个工具结果附 `[转向提示]`(含当前 Goal 对照),仅一次 |
 | followUp 不触发 | 流式中 **Ctrl+Q** 提交 | `behavior=followUp`,无转向提示 |
 

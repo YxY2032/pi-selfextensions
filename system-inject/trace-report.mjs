@@ -13,7 +13,8 @@ const args = process.argv.slice(2);
 const traceIdx = args.indexOf("--trace");
 const traceFile = traceIdx >= 0 ? args.splice(traceIdx, 2)[1] : undefined;
 const compliance = args.includes("--compliance");
-const target = args.filter((a) => a !== "--compliance")[0];
+const navFlag = args.includes("--nav");
+const target = args.filter((a) => a !== "--compliance" && a !== "--nav")[0];
 
 // ── 定位会话文件 ─────────────────────────────────────────────
 function newestSession(root) {
@@ -86,11 +87,19 @@ for (const e of entries) {
           kind: c.arguments?.kind,
           status: String(c.arguments?.status ?? "").slice(0, 60).replace(/\n/g, " "),
         });
-        navUpdates.push({ turn: assistantTurns, via: "checkpoint" });
+        let text = `Now ← "${String(c.arguments?.status ?? "")}"`;
+        if (c.arguments?.kind === "review") {
+          text += `;回顾块 ← 自省:"${c.arguments?.reflect ?? ""}" 调整:"${c.arguments?.adjust ?? ""}"`;
+        }
+        navUpdates.push({ ts: e.timestamp, turn: assistantTurns, via: "checkpoint", text });
       }
       if (c.type === "toolCall" && (c.name === "write" || c.name === "edit")) {
         if (JSON.stringify(c.arguments ?? {}).includes("PROGRESS.md")) {
-          navUpdates.push({ turn: assistantTurns, via: c.name });
+          const a = c.arguments ?? {};
+          const text = c.name === "write"
+            ? `全文写入:\n${String(a.content ?? a.file_text ?? JSON.stringify(a))}`
+            : `编辑:"${String(a.old_string ?? "")}" → "${String(a.new_string ?? "")}"`;
+          navUpdates.push({ ts: e.timestamp, turn: assistantTurns, via: c.name, text });
         }
       }
     }
@@ -117,6 +126,18 @@ for (const c of checkpoints) console.log(`  ${c.ts} 第${c.turn}轮 kind=${c.kin
 
 console.log(`\n[节拍/转向提示送达] 共 ${hints.length} 次`);
 for (const h of hints) console.log(`  ${h.ts} 第${h.turn}轮 [${h.kind}] (附于 ${h.tool} 结果)`);
+
+// ── 导航演化回放(--nav):内容质量审计 ────────────────────────
+if (navFlag) {
+  console.log(`\n[导航演化] 共 ${navUpdates.length} 次写入(checkpoint ${checkpoints.length} + 直接写 ${navUpdates.length - checkpoints.length})`);
+  for (const u of navUpdates) {
+    const text = String(u.text ?? "");
+    const shown = text.length > 800 ? text.slice(0, 800) + "\n…(截断;全文在会话 JSONL 或探针快照)" : text;
+    console.log(`  ── 第${u.turn}轮 [${u.via}] ${u.ts}`);
+    console.log(shown.split("\n").map((l) => "     " + l).join("\n"));
+  }
+  console.log(`  审阅四项:①四要素覆盖(缺"下一步"?) ②可核对事实密度(路径/命令/结果) ③对上一版的增量性 ④与时间线一致性`);
+}
 
 // ── 遵从率(ADR-0002 判据;--compliance)──────────────────────
 if (compliance) {
@@ -162,6 +183,11 @@ if (traceFile) {
     }
   }
   const reqs = trace.filter((t) => t.type === "request" && t.markers);
+  const navs = trace.filter((t) => t.type === "nav_write" && t.file);
+  if (navs.length) {
+    console.log(`\n  [探针导航快照·地面真值] ${navs.length} 份(哈希去重,含 bash 绕路写入),在 ${traceFile.replace(/[^/\\]+$/, "")}:`);
+    for (const n of navs) console.log(`    ${n.t} ${n.file} (${n.bytes}B hash=${n.hash})`);
+  }
   const any = (k) => reqs.some((r) => r.markers[k]);
   console.log(`\n  判定: 锚到达=${any("anchor")} preamble到达=${any("preamble")} plan_state到达=${any("plan_state")} Now泄漏=${any("nowLeak")}`);
 } else {

@@ -86,8 +86,8 @@ Goal)。总结的内容形状不归提示管——在 checkpoint 工具的参数
 | `system-inject.test.mjs` | index.ts 单元测试,12 用例(运行:`node system-inject.test.mjs`) |
 | `drift-guard.test.mjs` | drift-guard 单元测试,24 用例(运行:`node drift-guard.test.mjs`) |
 | `bench-drift.mjs` | A/B 行为基准,4 场景(锚遵循/因果对照/零干预/任务切换;运行:`node bench-drift.mjs`,会发起 5 次真实 pi 调用) |
-| `trace-probe.ts` | 实机追踪探针(`-e` 显式加载):记录模型实收的 system 标记/steer 事件/工具调用时间线,只记录零修改 |
-| `trace-report.mjs` | 会话分析器:checkpoint 调用、提示送达、工具统计,`--trace` 合并探针出"模型实收"判定 |
+| `trace-probe.ts` | 实机追踪探针(`-e` 显式加载):记录模型实收的 system 标记/steer 事件/工具调用时间线,附导航文件看门(哈希变化即快照);只记录零修改 |
+| `trace-report.mjs` | 会话分析器:checkpoint 调用、提示送达、工具统计;`--trace` 出"模型实收"判定,`--compliance` 出遵从率,`--nav` 出导航演化复盘(历史会话可无探针回放) |
 | `VERIFY.md` | 实机验证手册:标准流程 + 功能触发表 + 已知事实(pi-plan 同栈压制等) |
 | `package.json` | pi 包清单(`pi.extensions: ["./index.ts", "./drift-guard.ts"]`,探针刻意不在列) |
 

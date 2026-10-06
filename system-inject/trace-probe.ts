@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 // 追踪探针(开发工具,只有显式 -e 加载才生效,不进 package.json 的 pi.extensions)。
@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 
 const TRACE_DIR = "/tmp/pi-trace";
 const KEEP = 20; // 滚动清理:只保留最新 N 份 trace 文件
+const NAV_KEEP = 60; // 导航快照滚动保留份数(演化史是审计对象,留更多)
 
 const MARKERS: ReadonlyArray<readonly [string, string]> = [
   ["anchor", "## 任务导航"],
@@ -52,11 +53,36 @@ function initDir(): void {
   for (const f of traces.slice(0, Math.max(0, traces.length - KEEP))) {
     rmSync(`${TRACE_DIR}/${f}`);
   }
+  // 导航快照独立滚动(保留更多:演化史是审计对象)
+  const navs = readdirSync(TRACE_DIR).filter((f) => /^nav-.*\.md$/.test(f)).sort();
+  for (const f of navs.slice(0, Math.max(0, navs.length - NAV_KEEP))) {
+    rmSync(`${TRACE_DIR}/${f}`);
+  }
+}
+
+// 导航文件看门:内容哈希变化即快照(哈希去重;按文件实际变化判定,
+// bash 绕路写入也能捕捉,不依赖工具名)。观测侧解决,不碰被测系统。
+let lastNavHash: string | null = null;
+
+function snapshotNav(context: string): void {
+  try {
+    if (!existsSync("PROGRESS.md")) return;
+    const content = readFileSync("PROGRESS.md", "utf8");
+    const hash = createHash("sha1").update(content).digest("hex").slice(0, 8);
+    if (hash === lastNavHash) return;
+    lastNavHash = hash;
+    const name = `nav-${Date.now()}-${process.pid}-${context}.md`;
+    writeFileSync(`${TRACE_DIR}/${name}`, content);
+    log({ type: "nav_write", hash, file: name, bytes: content.length });
+  } catch (e) {
+    log({ type: "nav_write", error: (e as Error).message });
+  }
 }
 
 export default function (pi) {
   initDir();
   log({ type: "probe_start", pid: process.pid, cwd: process.cwd() });
+  snapshotNav("init"); // 基线:会话开始时文件已存在的形态
 
   pi.on("before_agent_start", async (event) => {
     log({ type: "run", promptHead: String(event.prompt ?? "").slice(0, 60) });
@@ -81,6 +107,7 @@ export default function (pi) {
   pi.on("tool_result", async (event) => {
     toolSeq++;
     log({ type: "tool", seq: toolSeq, name: event.toolName, isError: event.isError === true });
+    if (event.isError !== true) snapshotNav(`t${toolSeq}`);
     return undefined;
   });
 
