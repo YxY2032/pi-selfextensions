@@ -7,7 +7,7 @@ import { Type } from "typebox";
 // 设计与决策记录见同目录 README.md。PI_DRIFT_GUARD=off 时全部静默。
 
 const STATE_FILE = "PROGRESS.md";
-const STATUS_EVERY = 50;  // 轻检查间隔(轮)——ADR-0002:贴近实测自然维护节奏(≈140 轮/次),降噪约 90%
+const STATUS_EVERY = 50;  // 轻检查间隔(轮)——ADR-0002:贴近实测自然维护节奏(≈140 轮/次),降噪约 78%
 const REVIEW_EVERY = 100; // 深度回顾间隔(轮)
 const BRIEF_AFTER = 15;   // 无文档时,工具调用达到此次数提醒建文档(仅一次)
 const REVIEWS_KEPT = 3;   // 回顾史限留段数
