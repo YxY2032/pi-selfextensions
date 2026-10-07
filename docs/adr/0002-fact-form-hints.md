@@ -1,7 +1,7 @@
 # ADR-0002: 事实化提示家族与节拍重调
 
 日期:2026-10-06
-状态:已接受(效果待测试场裁决)
+状态:已确认(两场同向:59%→100%,详见 .scratch/hint-channel/test-plan.md)
 前置:ADR-0001(单一导航系统)
 工单:.scratch/fact-hints/
 

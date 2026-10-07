@@ -64,8 +64,8 @@ function hintKind(text) {
 }
 
 for (const e of entries) {
-  // 消息通道的提示(ADR-0004:custom 消息,不在工具结果里)——须在 message 守卫前处理
-  if (e.type === "custom" && e.customType === "drift-guard-hint") {
+  // 消息通道的提示(ADR-0004:custom_message 条目,不在工具结果里)——须在 message 守卫前处理
+  if (e.type === "custom_message" && e.customType === "drift-guard-hint") {
     const text = (e.content ?? []).map((c) => c.text ?? "").join(" ");
     hints.push({ ts: e.timestamp, turn: assistantTurns, tool: "(轮边界消息)", kind: hintKind(text), via: "message" });
     continue;
