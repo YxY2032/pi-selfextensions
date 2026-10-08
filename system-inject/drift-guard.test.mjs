@@ -185,7 +185,7 @@ await withCase("T9 无文档 15 次提醒:消息通道 + 位置写死 + 仅一�
   assert.equal(before, undefined, "消息通道下工具结果保持原样");
   assert.equal(sent.length, 1, "建档提醒经消息通道送出");
   const hint = sent[0].message.content[0].text;
-  assert.ok(hint.includes("PROGRESS.md"), "第 15 次应提醒建文档");
+  assert.ok(hint.includes("没有 PROGRESS.md"), "分类器锚词在(trace-report 按此识别建档提示,改文案须两处同步)");
   assert.ok(hint.includes("工作目录根") && hint.includes(process.cwd()), "位置写死(含绝对路径,ADR-0005)");
   assert.ok(hint.includes("只从运行目录读取"), "读取位置声明在");
   const after = await fire("tool_result", { isError: false });
@@ -489,7 +489,8 @@ await withCase("T30 空文档回顾事实:百轮一条非重发,建档即止,窗
   await fire("tool_result", { isError: false });
   assert.equal(sent.length, 4, "建档后节拍接管");
   assert.ok(!sent[3].message.content[0].text.includes("仍未建立"), "不再出现空文档事实");
-  assert.ok(sent[3].message.content[0].text.includes("[回顾状态]") || sent[3].message.content[0].text.includes("[导航状态]"), "转入常规节拍");
+  assert.ok(sent[3].message.content[0].text.includes("[回顾状态]") && sent[3].message.content[0].text.includes("未深度回顾"),
+    "350 轮两钟皆到期,review 优先——钉死优先级(二轮审查:原'二者之一'使 status 分支永不可达)");
 });
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
