@@ -18,7 +18,7 @@ const enabled = () => process.env.PI_DRIFT_GUARD !== "off";
 
 // 提示投递通道(ADR-0004):message=轮边界独立消息(pi.sendMessage,默认)——实测以
 // user 角色落在请求消息末尾,模型必读的位置;tail=旧通道(工具结果尾巴,对照实验用)。
-// 仅节拍的 status/review 提示走此开关;转向/建档提示保持尾巴通道(单变量纪律)。
+// status/review 与建档提醒走此开关(ADR-0004/0005);转向提示维持尾巴通道(事件驱动,跟随原始 steer)。
 const hintViaMessage = () => process.env.PI_DRIFT_HINT_CHANNEL !== "tail";
 
 // —— 运行状态(before_agent_start 复位;reviewCount 为任务级,跨运行连续)
@@ -206,7 +206,7 @@ function docHint(): string {
 // 非重发旧提醒(红线禁的是那个),是回顾节点上的新事实;每 100 轮最多一条,建档即止。
 function emptyReviewHint(): string {
   return `[回顾状态] 已 ${turnCount} 轮,导航文件仍未建立。` +
-    "此期间的进展只存在于对话历史中(压缩后可能丢失)。是否建立由你判断。";
+    "此期间的进展只存在于对话历史中(上下文压缩后可能丢失)。是否建立由你判断。";
 }
 
 function statusHint(): string {
@@ -260,9 +260,18 @@ function isDirectNavWrite(event: { toolName?: string; input?: unknown }): boolea
   }
 }
 
-// 节拍器:优先级 转向确认 > 建文档提醒(仅一次) > review > status;
+// 通道分派:默认经消息通道送轮边界;PI_DRIFT_HINT_CHANNEL=tail 时回退工具结果尾巴
+function deliver(event: { content?: unknown[] }, hint: string, sendHint?: (h: string) => void) {
+  if (sendHint && hintViaMessage()) {
+    sendHint(hint);
+    return undefined;
+  }
+  return appendHint(event, hint);
+}
+
+// 节拍器:优先级 转向确认 > 空文档回顾事实 > 建档提醒(仅一次) > review > status;
 // 同轮去重:lastNudgedTurn 守卫;提示即消费节拍时钟,避免逐轮轰炸。
-// status/review 默认经轮边界消息通道投递(ADR-0004);sendHint 由注册处注入。
+// status/review 与建档提醒默认经轮边界消息通道投递(ADR-0004/0005);sendHint 由注册处注入。
 function onToolResult(event: { isError?: boolean; content?: unknown[]; toolName?: string; input?: unknown }, sendHint?: (hint: string) => void) {
   if (!enabled()) return undefined;
   if (event.isError) return undefined;
@@ -277,23 +286,16 @@ function onToolResult(event: { isError?: boolean; content?: unknown[]; toolName?
   }
 
   if (!existsSync(STATE_FILE)) {
-    // 空文档期(ADR-0005):建档提醒(一次,消息通道)+ 回顾节拍降级为空文档事实
+    // 空文档期(ADR-0005):建档提醒(一次)+ 回顾节拍降级为空文档事实
     if (docReminded && turnCount - lastReviewTurn >= REVIEW_EVERY && lastNudgedTurn !== turnCount) {
       lastNudgedTurn = turnCount;
       lastReviewTurn = turnCount;
-      if (sendHint && hintViaMessage()) {
-        sendHint(emptyReviewHint());
-        return undefined;
-      }
-      return appendHint(event, emptyReviewHint());
+      return deliver(event, emptyReviewHint(), sendHint);
     }
     if (!docReminded && toolCalls >= BRIEF_AFTER) {
       docReminded = true;
-      if (sendHint && hintViaMessage()) {
-        sendHint(docHint());
-        return undefined;
-      }
-      return appendHint(event, docHint());
+      lastNudgedTurn = turnCount; // 防与空文档事实同轮背靠背
+      return deliver(event, docHint(), sendHint);
     }
     return undefined;
   }
@@ -304,12 +306,7 @@ function onToolResult(event: { isError?: boolean; content?: unknown[]; toolName?
     lastNudgedTurn = turnCount;
     if (dueReview) lastReviewTurn = turnCount;
     if (dueStatus) lastStatusTurn = turnCount;
-    const hint = dueReview ? reviewHint() : statusHint();
-    if (sendHint && hintViaMessage()) {
-      sendHint(hint);
-      return undefined;
-    }
-    return appendHint(event, hint);
+    return deliver(event, dueReview ? reviewHint() : statusHint(), sendHint);
   }
   return undefined;
 }
@@ -324,7 +321,7 @@ export default function (pi) {
       "哪些无效、路线是否需要调整(约每 100 轮一次)。\n" +
       "status→Now 节整节替换;可选 results→成果节、next→下一步节(提供才替换,不提供则保留原节)。\n" +
       "标题、Goal、回顾、以及你自己添加的其他小节(表格/清单/经验)一律原样保留。\n" +
-      "导航文件固定为运行目录根的 PROGRESS.md(勿放进子目录)。不存在则按标准骨架自动创建。",
+      "导航文件固定为运行目录根的 PROGRESS.md——本系统只从运行目录读取。不存在则按标准骨架自动创建。",
     parameters: Type.Object({
       kind: Type.String({ enum: ["status", "review"], description: "回顾类型:status=现状汇报,review=深度自省" }),
       status: Type.String({ description: "现状汇报,四要素:正在做什么、已完成或已验证的成果、做过的关键工作、下一步打算。可核对的事实优先(路径/命令/测试结果);对照上一条 Now,只记增量。" }),

@@ -186,7 +186,7 @@ await withCase("T9 无文档 15 次提醒:消息通道 + 位置写死 + 仅一�
   assert.equal(sent.length, 1, "建档提醒经消息通道送出");
   const hint = sent[0].message.content[0].text;
   assert.ok(hint.includes("PROGRESS.md"), "第 15 次应提醒建文档");
-  assert.ok(hint.includes("工作目录根"), "位置写死(ADR-0005:防建进子目录)");
+  assert.ok(hint.includes("工作目录根") && hint.includes(process.cwd()), "位置写死(含绝对路径,ADR-0005)");
   assert.ok(hint.includes("只从运行目录读取"), "读取位置声明在");
   const after = await fire("tool_result", { isError: false });
   assert.equal(after, undefined, "只提醒一次");
@@ -328,6 +328,16 @@ await withCase("T20 哲学红线:全部提示文案零祈使句", async () => {
     await fire("tool_result", { isError: false });
     texts.push(sent[0].message.content[0].text);
   }
+  { // 空文档回顾事实(ADR-0005,亦入红线族)
+    const { fire, reset, sent } = load();
+    await reset();
+    rmSync("PROGRESS.md", { force: true });
+    for (let i = 0; i < 14; i++) await fire("tool_result", { isError: false });
+    await fire("tool_result", { isError: false });
+    for (let i = 0; i < 100; i++) await fire("turn_end");
+    await fire("tool_result", { isError: false });
+    texts.push(sent[1].message.content[0].text);
+  }
   { // steer
     const { fire, reset } = load();
     await reset(); await seedDoc();
@@ -336,7 +346,7 @@ await withCase("T20 哲学红线:全部提示文案零祈使句", async () => {
     await fire("message_start", { message: { role: "user" } });
     texts.push((await fire("tool_result", { isError: false })).content[0].text);
   }
-  assert.equal(texts.length, 4);
+  assert.equal(texts.length, 5);
   for (const t of texts) {
     assert.ok(!IMPERATIVE.test(t), `提示含祈使标记: ${t}`);
   }
@@ -455,7 +465,7 @@ await withCase("T29 PI_DRIFT_HINT_CHANNEL=tail → 旧通道对照可用", async
   assert.equal(sent.length, 0, "不走消息通道");
 });
 
-await withCase("T30 空文档回顾事实:无文件时 review 节拍降级,百轮一条非重发", async () => {
+await withCase("T30 空文档回顾事实:百轮一条非重发,建档即止,窗口中段静默", async () => {
   const { fire, reset, sent } = load();
   await reset();
   for (let i = 0; i < 14; i++) await fire("tool_result", { isError: false });
@@ -471,6 +481,15 @@ await withCase("T30 空文档回顾事实:无文件时 review 节拍降级,百�
   for (let i = 0; i < 100; i++) await fire("turn_end");      // 又 100 轮
   await fire("tool_result", { isError: false });
   assert.equal(sent.length, 3, "再到期再一条(每 100 轮最多一条)");
+  for (let i = 0; i < 50; i++) await fire("turn_end");       // 窗口中段(第 250 轮)
+  await fire("tool_result", { isError: false });
+  assert.equal(sent.length, 3, "窗口中段静默(未到期不响)");
+  await seedDoc();                                           // 建档(ADR-0005:建档即止)
+  for (let i = 0; i < 100; i++) await fire("turn_end");
+  await fire("tool_result", { isError: false });
+  assert.equal(sent.length, 4, "建档后节拍接管");
+  assert.ok(!sent[3].message.content[0].text.includes("仍未建立"), "不再出现空文档事实");
+  assert.ok(sent[3].message.content[0].text.includes("[回顾状态]") || sent[3].message.content[0].text.includes("[导航状态]"), "转入常规节拍");
 });
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败`);

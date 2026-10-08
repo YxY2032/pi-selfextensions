@@ -41,7 +41,8 @@ node C:/Users/god/.pi/agent/selfextensions/system-inject/trace-report.mjs \
 | preamble | 任意提问 | `preamble到达=true` |
 | 节拍·status(50 轮,ADR-0002/0004) | 连续跑 ≥50 轮工具调用 | 轮边界出现 drift-guard-hint 消息(TUI 可见):已 X 轮未更新 + Goal/Now 对照(标注轮距)+ 后果事实 + 判断权声明;同轮不重复 |
 | 节拍·review(100 轮) | ≥100 轮未回顾 | 轮边界 drift-guard-hint 消息:已 X 轮未深度回顾 + 最近回顾自省引用 + 方向疑问句 |
-| 建档提醒(ADR-0005:消息通道+位置) | 无文档目录 ≥15 次工具调用 | 轮边界 drift-guard-hint 消息:含"工作目录根(绝对路径)";恰一次 |
+| 建档提醒(ADR-0005:消息通道+位置) | 无文档目录 ≥15 次工具调用 | 轮边界消息:含"工作目录根(绝对路径)";恰一次 |
+| 空文档回顾事实(ADR-0005) | 无文件持续 ≥100 轮 | 轮边界消息:"已 X 轮,仍未建立";每 100 轮一条,建档即止;不计入遵从率 |
 | 陈旧事实 | 提示后模型直接 write PROGRESS.md | 下次提示的"已 X 轮未更新"从直接写入轮起算(双时钟分离) |
 | checkpoint | 对模型说"调用 checkpoint 汇报进展" | `[checkpoint 调用]` 列表 + PROGRESS.md 的 Now 更新 |
 | 遵从率(ADR-0002 判据) | 会话结束跑 `--compliance` | status/review 提示后 25 轮内有导航更新的比例;≥40% 有效 / 10-40% 调参 / <10% 回滚 |

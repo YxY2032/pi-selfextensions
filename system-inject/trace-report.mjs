@@ -57,9 +57,11 @@ const HINT_PREFIXES = ["[导航状态", "[回顾状态", "[转向提示]", "[检
 const COMPLIANCE_WINDOW = 25; // 遵从窗口:提示后 N 轮内发生导航更新(ADR-0002 判据)
 
 function hintKind(text) {
+  // 顺序敏感:空文档事实复用 [回顾状态] 前缀,须先判;新旧建档文案兼容(ADR-0005)
+  if (text.includes("仍未建立")) return "empty";
   if (text.includes("[回顾状态") || text.includes("[回顾点")) return "review";
   if (text.includes("[转向提示]")) return "steer";
-  if (text.includes("无导航文件")) return "doc";
+  if (text.includes("无导航文件") || text.includes("没有 PROGRESS.md")) return "doc";
   return "status"; // [导航状态] / [检查点] / [系统观察]
 }
 
@@ -158,7 +160,7 @@ if (compliance) {
   const rate = measured.length > 0 ? Math.round((complied / measured.length) * 100) : null;
   console.log(`  合计: ${complied}/${measured.length}${rate !== null ? ` = ${rate}%` : ""}` +
     ` | 导航更新共 ${navUpdates.length} 次(checkpoint ${checkpoints.length} + 直接写 ${navUpdates.length - checkpoints.length})` +
-    ` | 建档提示 ${hints.filter((h) => h.kind === "doc").length} 次、转向提示 ${hints.filter((h) => h.kind === "steer").length} 次(不计入遵从率)`);
+    ` | 建档提示 ${hints.filter((h) => h.kind === "doc").length} 次、空文档事实 ${hints.filter((h) => h.kind === "empty").length} 次、转向提示 ${hints.filter((h) => h.kind === "steer").length} 次(均不计入遵从率)`);
   console.log(`  判据(ADR-0002): ≥40% 有效 / 10%~40% 调参再测 / <10% 措辞回滚` +
     `${rate === null ? "\n  (本会话无可测提示——节拍未触发或旧前缀不匹配)" : ""}`);
 }
