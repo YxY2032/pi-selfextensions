@@ -177,14 +177,20 @@ await withCase("T8 第 100 轮 review 优先于 status", async () => {
   assert.ok(hint.includes("通向 Goal"), "review 问方向,与 status 的记录差距分工");
 });
 
-await withCase("T9 无文档 15 次提醒:仅一次且 10/20 节拍不生效", async () => {
-  const { fire, reset } = load();
+await withCase("T9 无文档 15 次提醒:消息通道 + 位置写死 + 仅一次", async () => {
+  const { fire, reset, sent } = load();
   await reset();
   for (let i = 0; i < 14; i++) await fire("tool_result", { isError: false });
   const before = await fire("tool_result", { isError: false });
-  assert.ok(before.content[0].text.includes("PROGRESS.md"), "第 15 次应提醒建文档");
+  assert.equal(before, undefined, "消息通道下工具结果保持原样");
+  assert.equal(sent.length, 1, "建档提醒经消息通道送出");
+  const hint = sent[0].message.content[0].text;
+  assert.ok(hint.includes("PROGRESS.md"), "第 15 次应提醒建文档");
+  assert.ok(hint.includes("工作目录根"), "位置写死(ADR-0005:防建进子目录)");
+  assert.ok(hint.includes("只从运行目录读取"), "读取位置声明在");
   const after = await fire("tool_result", { isError: false });
   assert.equal(after, undefined, "只提醒一次");
+  assert.equal(sent.length, 1, "不重发(红线:仅一次)");
 });
 
 await withCase("T10 checkpoint 复位时钟:回顾后不重复提示", async () => {
@@ -314,12 +320,13 @@ await withCase("T20 哲学红线:全部提示文案零祈使句", async () => {
     await fire("tool_result", { isError: false });
     texts.push(sent[0].message.content[0].text);
   }
-  { // doc(须清掉前面块种的文件,否则走不到建档分支)
-    const { fire, reset } = load();
+  { // doc(消息通道,ADR-0005;须清掉前面块种的文件,否则走不到建档分支)
+    const { fire, reset, sent } = load();
     await reset();
     rmSync("PROGRESS.md", { force: true });
     for (let i = 0; i < 14; i++) await fire("tool_result", { isError: false });
-    texts.push((await fire("tool_result", { isError: false })).content[0].text);
+    await fire("tool_result", { isError: false });
+    texts.push(sent[0].message.content[0].text);
   }
   { // steer
     const { fire, reset } = load();
@@ -446,6 +453,24 @@ await withCase("T29 PI_DRIFT_HINT_CHANNEL=tail → 旧通道对照可用", async
   const r = await fire("tool_result", { isError: false, content: [{ type: "text", text: "O" }] });
   assert.ok(r.content[0].text === "O" && r.content[1].text.includes("[导航状态]"), "旧尾巴通道照常");
   assert.equal(sent.length, 0, "不走消息通道");
+});
+
+await withCase("T30 空文档回顾事实:无文件时 review 节拍降级,百轮一条非重发", async () => {
+  const { fire, reset, sent } = load();
+  await reset();
+  for (let i = 0; i < 14; i++) await fire("tool_result", { isError: false });
+  await fire("tool_result", { isError: false });            // 建档提醒(docReminded=true)
+  for (let i = 0; i < 100; i++) await fire("turn_end");      // 至第 100 轮
+  await fire("tool_result", { isError: false });
+  assert.equal(sent.length, 2, "回顾节点应送出空文档事实(非重发建档提醒)");
+  const fact = sent[1].message.content[0].text;
+  assert.ok(fact.includes("[回顾状态]") && fact.includes("仍未建立"), "应是回顾形态的空文档事实");
+  assert.ok(!fact.includes("已 15 次工具调用"), "不是旧提醒的复读");
+  await fire("tool_result", { isError: false });
+  assert.equal(sent.length, 2, "同轮去重");
+  for (let i = 0; i < 100; i++) await fire("turn_end");      // 又 100 轮
+  await fire("tool_result", { isError: false });
+  assert.equal(sent.length, 3, "再到期再一条(每 100 轮最多一条)");
 });
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败`);

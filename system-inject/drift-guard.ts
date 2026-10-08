@@ -196,8 +196,17 @@ function steerHint(): string {
 }
 
 function docHint(): string {
-  return `[导航状态] 已 ${toolCalls} 次工具调用,无导航文件(${STATE_FILE})。` +
-    "当前进展仅存在于对话历史中(上下文压缩后可能丢失)。是否建立由你判断。";
+  // 位置写死(ADR-0005):实测有模型把文件建进子目录(tsec/),系统只读运行目录——
+  // 歧义的代价是一整场,所以直接带绝对路径
+  return `[导航状态] 已 ${toolCalls} 次工具调用,工作目录根(${process.cwd()})没有 ${STATE_FILE}` +
+    "——本系统只从运行目录读取。当前进展仅存在于对话历史中(上下文压缩后可能丢失)。是否建立由你判断。";
+}
+
+// 空文档回顾事实(ADR-0005):无文件时 review 节拍不再整体短路,降级为一条事实句——
+// 非重发旧提醒(红线禁的是那个),是回顾节点上的新事实;每 100 轮最多一条,建档即止。
+function emptyReviewHint(): string {
+  return `[回顾状态] 已 ${turnCount} 轮,导航文件仍未建立。` +
+    "此期间的进展只存在于对话历史中(压缩后可能丢失)。是否建立由你判断。";
 }
 
 function statusHint(): string {
@@ -268,8 +277,22 @@ function onToolResult(event: { isError?: boolean; content?: unknown[]; toolName?
   }
 
   if (!existsSync(STATE_FILE)) {
+    // 空文档期(ADR-0005):建档提醒(一次,消息通道)+ 回顾节拍降级为空文档事实
+    if (docReminded && turnCount - lastReviewTurn >= REVIEW_EVERY && lastNudgedTurn !== turnCount) {
+      lastNudgedTurn = turnCount;
+      lastReviewTurn = turnCount;
+      if (sendHint && hintViaMessage()) {
+        sendHint(emptyReviewHint());
+        return undefined;
+      }
+      return appendHint(event, emptyReviewHint());
+    }
     if (!docReminded && toolCalls >= BRIEF_AFTER) {
       docReminded = true;
+      if (sendHint && hintViaMessage()) {
+        sendHint(docHint());
+        return undefined;
+      }
       return appendHint(event, docHint());
     }
     return undefined;
@@ -300,8 +323,8 @@ export default function (pi) {
       'kind="review":深度回顾——对照任务导航自省:方向是否对准、哪些工作有效、' +
       "哪些无效、路线是否需要调整(约每 100 轮一次)。\n" +
       "status→Now 节整节替换;可选 results→成果节、next→下一步节(提供才替换,不提供则保留原节)。\n" +
-      "标题、Goal、回顾、以及你自己添加的其他小节(表格/清单/经验)一律原样保留。" +
-      "PROGRESS.md 不存在则按标准骨架自动创建。",
+      "标题、Goal、回顾、以及你自己添加的其他小节(表格/清单/经验)一律原样保留。\n" +
+      "导航文件固定为运行目录根的 PROGRESS.md(勿放进子目录)。不存在则按标准骨架自动创建。",
     parameters: Type.Object({
       kind: Type.String({ enum: ["status", "review"], description: "回顾类型:status=现状汇报,review=深度自省" }),
       status: Type.String({ description: "现状汇报,四要素:正在做什么、已完成或已验证的成果、做过的关键工作、下一步打算。可核对的事实优先(路径/命令/测试结果);对照上一条 Now,只记增量。" }),
