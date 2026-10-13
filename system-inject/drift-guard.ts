@@ -218,7 +218,8 @@ function statusHint(): string {
   let s = `[导航状态] 导航已 ${stale} 轮未更新。`;
   if (goal && goal !== "(待补充)") s += `Goal:"${quoteGoal(goal)}"(来自 ${STATE_FILE})。`;
   if (now) s += `上条 Now(${stale} 轮前):"${quote(now)}"。`;
-  s += "此后的进展未记入,压缩后可能丢失。是否记入、记什么,由你判断。";
+  s += "此后的进展未记入,压缩后可能丢失。";
+  s += `记入前先 read ${STATE_FILE} 对照全文,再决定记什么。`; // 用户裁决:全文回灌替代摘录
   return s;
 }
 
@@ -240,7 +241,7 @@ function reviewHint(): string {
       s += "最近回顾:无记录。";
     }
   }
-  s += `这 ${stale} 轮的路线是否仍通向 Goal?`;
+  s += `记入前先 read ${STATE_FILE} 对照全文,再回顾这 ${stale} 轮的路线是否仍通向 Goal。`; // 用户裁决:全文回灌
   return s;
 }
 
