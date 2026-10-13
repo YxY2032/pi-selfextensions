@@ -156,7 +156,7 @@ await withCase("T7 第 50 轮轻检查:消息通道投递 + 同轮去重 + 消�
   assert.ok(hint.includes("进行中"), "应引用 Now 对照物");
   assert.ok(hint.includes(':"G"') && hint.includes("Goal"), "应引用 Goal 对照物");
   assert.ok(hint.includes("压缩后可能丢失"), "应含后果事实");
-  assert.ok(hint.includes("先 read PROGRESS.md"), "记入前先读全文(用户裁决:全文回灌替代摘录)");
+  assert.ok(hint.includes("先 read PROGRESS.md") && hint.includes("回顾此前的进展与现状"), "先读=回顾任务进展,再更新(非为记而记)");
   await fire("tool_result", { isError: false });
   assert.equal(sent.length, 1, "同轮去重");
   await fire("turn_end");
@@ -174,7 +174,7 @@ await withCase("T8 第 100 轮 review 优先于 status", async () => {
   const hint = sent[0].message.content[0].text;
   assert.ok(hint.includes("[回顾状态]"), "100 轮应为深度回顾");
   assert.ok(hint.includes("未深度回顾"), "应含回顾陈旧事实");
-  assert.ok(hint.includes("先 read PROGRESS.md"), "review 同样要求先读全文");
+  assert.ok(hint.includes("先 read PROGRESS.md") && hint.includes("回顾此前"), "review 同样先回顾再检视");
   assert.ok(hint.includes("通向 Goal"), "回顾仍指向方向问题");
 });
 
