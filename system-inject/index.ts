@@ -115,13 +115,27 @@ function writeSnapshot(prompt) {
 }
 
 export default function (pi) {
+  // —— run 内锚形态切换(ADR-0006)——
+  // event.systemPromptOptions 是活引用:宿主 transformContext 每次请求都从同一对象
+  // 上现读 forceSystemPrompt。文件创建后原地改写该字段,下一个请求立即换状态形态,
+  // 不必等下一次 before_agent_start(靶场单 run 马拉松的主修)。
+  let liveOptions = null;      // systemPromptOptions 的活引用
+  let promptBeforeAnchor = ""; // 锚追加前的基底(preamble 已注入)
+  let fileExistedAtStart = false;
+  let anchorSwitched = false;  // 每 run 仅切一次
+
   pi.on("before_agent_start", async (event, ctx) => {
+    liveOptions = event.systemPromptOptions;
+    anchorSwitched = false;
+    fileExistedAtStart = existsSync(join(process.cwd(), STATE_FILE));
+
     let prompt = event.systemPrompt;
 
     // 部件一:preamble(仅在命中原句时注入)
     if (prompt.includes(ORIGINAL_TAIL)) {
       prompt = prompt.replace(ORIGINAL_TAIL, ORIGINAL_TAIL + PREAMBLE_INJECT);
     }
+    promptBeforeAnchor = prompt;
 
     // 部件二:导航锚(PI_DRIFT_GUARD=off 时整体停用,仅停锚,不停 preamble)
     if (process.env.PI_DRIFT_GUARD !== "off") {
@@ -138,5 +152,29 @@ export default function (pi) {
     // 无任何修改时不强制投影,交还 runner 走默认路径
     if (prompt === event.systemPrompt) return undefined;
     return { systemPrompt: prompt };
+  });
+
+  // 文件创建检测 → 立即切锚为状态形态(下一个请求生效)
+  pi.on("tool_result", async (event, ctx) => {
+    if (anchorSwitched || fileExistedAtStart) return undefined;
+    if (event.isError) return undefined;
+    if (process.env.PI_DRIFT_GUARD === "off") return undefined;
+    if (!liveOptions) return undefined;
+
+    const raw = readNavFile();
+    if (raw === null || !raw.trim()) return undefined; // 仍无文件
+
+    // 文件出现了——以状态形态重建锚并原地改写 forceSystemPrompt
+    anchorSwitched = true;
+    const trusted = typeof ctx.isProjectTrusted === "function" ? ctx.isProjectTrusted() : true;
+    const anchor = trusted ? buildAnchor(ctx) : GUIDE_FORM;
+    const newPrompt = promptBeforeAnchor + "\n\n" + anchor;
+    liveOptions.forceSystemPrompt = newPrompt;
+
+    try {
+      writeSnapshot(newPrompt);
+      console.error(`[system-inject] 锚已切换为状态形态(run 内,文件创建即刻)`);
+    } catch (e) { /* 快照失败不影响切换 */ }
+    return undefined;
   });
 }

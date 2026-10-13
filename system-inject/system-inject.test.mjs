@@ -38,7 +38,7 @@ async function withCase(name, fn) {
   }
 }
 
-// 构造:加载扩展 → 捕获 before_agent_start 处理器 → 以受控 ctx 调用
+// 构造:加载扩展 → 捕获 before_agent_start + tool_result 处理器 → 以受控 ctx 调用
 function makeRunner(cred = true) {
   const handlers = {};
   mod.default({ on: (event, handler) => { handlers[event] = handler; } });
@@ -49,6 +49,28 @@ function makeRunner(cred = true) {
     const r = await handlers["before_agent_start"]({ systemPrompt: promptText }, ctx);
     delete process.env.PI_DRIFT_GUARD;
     return r;
+  };
+}
+
+// 专测 run 内锚切换(ADR-0006):模拟单 run 马拉松——开局无文件(引导形态),
+// 中途 tool_result 时文件出现 → forceSystemPrompt 应被原地改写为状态形态
+function makeSwitchRunner(cred = true) {
+  const handlers = {};
+  const options = {}; // 模拟宿主的 systemPromptOptions(活引用)
+  mod.default({ on: (event, handler) => { handlers[event] = handler; } });
+  return {
+    start: async (promptText) => {
+      const ctx = { isProjectTrusted: () => cred };
+      const r = await handlers["before_agent_start"]({ systemPrompt: promptText, systemPromptOptions: options }, ctx);
+      // 模拟 runner 行为:写入 forceSystemPrompt
+      if (r?.systemPrompt !== undefined) options.forceSystemPrompt = r.systemPrompt;
+      else delete options.forceSystemPrompt;
+      return r;
+    },
+    toolResult: async () => {
+      return await handlers["tool_result"]({ isError: false }, { isProjectTrusted: () => cred });
+    },
+    options,
   };
 }
 
@@ -157,6 +179,48 @@ await withCase("T12 尾部锚定:锚位于最终系统提示词末尾(ADR-0001 �
   assert.ok(anchorIdx > 0, "锚应在");
   assert.ok(anchorIdx > r.systemPrompt.lastIndexOf("SECTION-TAIL-MARKER"), "锚应在全部节之后");
   assert.ok(!/\n\n</.test(r.systemPrompt.slice(anchorIdx)), "锚之后不得再出现任何节(尾部锚定)");
+});
+
+await withCase("T13 run 内锚切换:文件创建后 forceSystemPrompt 原地改写为状态形态(ADR-0006)", async () => {
+  const sw = makeSwitchRunner();
+  const r = await sw.start(BASE);
+  assert.ok(r.systemPrompt.includes("当前没有导航文件"), "开局应为引导形态");
+  assert.equal(sw.options.forceSystemPrompt, r.systemPrompt, "宿主 options 应被写入");
+
+  // 模拟模型建文件
+  writeFileSync("PROGRESS.md", "# 测试任务\n\n## Goal\n在时限内完成迁移。\n\n## Now\n- 起步\n");
+
+  await sw.toolResult();
+  assert.ok(sw.options.forceSystemPrompt.includes("在时限内完成迁移"), "forceSystemPrompt 应含 Goal(状态形态)");
+  assert.ok(!sw.options.forceSystemPrompt.includes("当前没有导航文件"), "引导文案应消失");
+  assert.ok(sw.options.forceSystemPrompt.includes("sandbox task executor"), "preamble 应保留");
+
+  // 再触发 toolResult 不重复切(已切过)
+  writeFileSync("PROGRESS.md", "# 测试任务\n\n## Goal\n更新了的目标。\n\n## Now\n- 进行中\n");
+  await sw.toolResult();
+  assert.ok(sw.options.forceSystemPrompt.includes("在时限内完成迁移"), "不重复切换(首次的 Goal 留存)");
+});
+
+await withCase("T14 run 内锚切换:开局已有文件 → 不触发切换(开局即状态形态)", async () => {
+  writeFileSync("PROGRESS.md", "# 已有\n\n## Goal\nG1\n\n## Now\n- a\n");
+  const sw = makeSwitchRunner();
+  const r = await sw.start(BASE);
+  assert.ok(r.systemPrompt.includes("G1"), "开局即状态形态");
+  await sw.toolResult();
+  assert.equal(sw.options.forceSystemPrompt, r.systemPrompt, "不应被 tool_result 二次改写");
+});
+
+await withCase("T15 run 内锚切换:PI_DRIFT_GUARD=off → 不触发切换", async () => {
+  rmSync("PROGRESS.md", { force: true });
+  process.env.PI_DRIFT_GUARD = "off";
+  const sw = makeSwitchRunner();
+  await sw.start(BASE);
+  writeFileSync("PROGRESS.md", "# x\n\n## Goal\nG\n\n## Now\n- a\n");
+  const before = sw.options.forceSystemPrompt;
+  await sw.toolResult();
+  assert.equal(sw.options.forceSystemPrompt, before, "off 时 tool_result 不改写(锚全关)");
+  assert.ok(!sw.options.forceSystemPrompt.includes("## Goal"), "不注入 Goal");
+  delete process.env.PI_DRIFT_GUARD;
 });
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
