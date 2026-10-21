@@ -1,77 +1,123 @@
-# selfextensions — pi 扩展工作区
+# pi-drift-guard
 
-自管扩展的统一目录。每个子目录是一个独立的 pi 包(带 package.json 清单),
-启停通过 `~/.pi/agent/settings.json` 的 `packages` 注册表控制。
+A drift-prevention extension for [pi](https://github.com/earendil-works/pi) — prevents context drift in long-horizon tasks by maintaining an external navigation file and periodically re-presenting task goals. Without ever constraining the model.
 
-## 分类总览
+## Problem
 
-| 分类 | 扩展 | 来源 | 干什么 |
-|---|---|---|---|
-| **注入与导航** | [system-inject](./system-inject/README.md) | 自研 | preamble 投影 + 防漂移导航锚(读 PROGRESS.md 注入 Goal)+ checkpoint/节拍器/转向确认 |
-| **工作流(存档)** | [pi-plan](./pi-plan/README.md) | 自研包 | 已停用(ADR-0001):write_plan 执行清单,注入通道与 force 冲突被压制 |
-| **外部工具** | pi-web-access | npm(`npm:pi-web-access`) | web_search / fetch_content / source_check 等联网工具 |
+LLMs are stateless. "Memory" is the full conversation text resent on every call. In long tasks (hundreds of turns), four pathologies emerge:
 
-## 目录结构
+| Pathology | Symptom |
+|---|---|
+| Dilution | Goal buried under tool outputs |
+| Recency bias | Only the last few turns matter |
+| Debt accumulation | Old direction persists after steering |
+| One-way progress | Model never checks alignment |
 
-```text
-selfextensions/
-├── README.md / AGENTS.md / CONTEXT.md  ← 总索引 / 工程技能配置 / 术语表
-├── docs/
-│   ├── agents/             ← 工程技能消费规则(tracker / labels / domain)
-│   └── adr/                ← 决策记录(0001: 单一导航系统,pi-plan 存档)
-├── .scratch/               ← 本地工单与 spec(feature 目录制)
-├── system-inject/          ← [注入与导航] pi 包(唯一导航系统,ADR-0001)
-│   ├── index.ts            ←    preamble + 导航锚
-│   ├── drift-guard.ts      ←    checkpoint 工具 + 节拍器 + 转向确认
-│   ├── trace-probe.ts / trace-report.mjs / VERIFY.md  ← 实机追踪与验证(--compliance 遵从率)
-│   └── *.test.mjs / bench-drift.mjs                    ← 单测(12+30)与行为基准
-└── pi-plan/                ← [工作流] 已存档(ADR-0001)
+**Solution**: A small authoritative state file (`PROGRESS.md`) outside the transcript. Code guarantees format. A metronome periodically places its content in front of the model. Whether to create it, what to record, whether to listen — the model's choice.
+
+## How it works
+
+```
+User asks → Anchor injects Goal into system prompt
+  ↓ ~15 tool calls
+Reminder: "No nav file at <cwd>. Create one if this task is long enough."
+  ↓ Model decides (may refuse for short tasks — this is by design)
+PROGRESS.md created → Anchor switches to state form (same request, ADR-0006)
+  ↓ Every 50 turns
+[Navigation] "Stale for 50 turns. Goal: '...'. Previous Now (50 turns ago): '...'.
+Read PROGRESS.md first, then update based on recent work."
+  ↓ Model reads file → checkpoints → clocks reset → system goes silent
 ```
 
-## 多机同步(GitHub)
-
-本目录是独立 git 仓库,远端:`YxY2032/pi-selfextensions`(私有)。
-
-新机器初始化:
+## Install
 
 ```bash
-git clone git@github.com:YxY2032/pi-selfextensions.git ~/.pi/agent/selfextensions
+git clone https://github.com/YxY2032/pi-drift-guard.git ~/.pi/agent/pi-drift-guard
 ```
 
-`~/.pi/agent/settings.json` 的 `packages` 数组按上节配置即可(路径若用户名不同需相应调整)。
-本机改动后同步:`git add <具体文件> && git commit && git push`;其他机器 `git pull` 后 `/reload` 或重启 pi。
+Add to `~/.pi/agent/settings.json`:
 
-## 启停管理
-
-**注册表**:`~/.pi/agent/settings.json` → `packages` 数组,一条 = 一个启用的扩展:
-
-```jsonc
-[
-  "/Users/yxy/.pi/agent/selfextensions/system-inject",  ← 目录(pi 清单解析)
-  "npm:pi-web-access"
-]
+```json
+{
+  "packages": [
+    "~/.pi/agent/pi-drift-guard/system-inject"
+  ]
+}
 ```
 
-- **停用**:从数组删除该条(或注释式管理脚本),重启 pi 生效
-- **启用**:数组加回路径 / `pi install <来源>`
-- **临时验证单个扩展**:`pi -e ./某个扩展.ts`(绕过注册表)
+## Components
 
-## 注意事项
+| File | What it does |
+|---|---|
+| `index.ts` | Anchor: injects Goal into system prompt; in-run form switch via `systemPromptOptions` live reference |
+| `drift-guard.ts` | Checkpoint tool + metronome (dual-clock) + steer confirmation |
+| `trace-probe.ts` | Dev probe: records what the model actually receives (opt-in `-e`) |
+| `trace-report.mjs` | Session analyzer: compliance rate, nav evolution timeline |
 
-1. **导航体系已收敛为单一系统**(ADR-0001):pi-plan 已退出启用集存档。
-   其 sections 注入与 system-inject 必需的 force 通道结构性冲突(被宿主
-   forced-prompt projection 压制,从未到达模型);证据与复现方法见
-   [system-inject/VERIFY.md](./system-inject/VERIFY.md)。
-   若未来出现新的 sections 注入型扩展,先重开该 ADR。
-2. system-inject 的快照与审计日志在 `/tmp/anchor-probe/`(滚动保留 20 份)。
-3. 修改任何扩展代码后:`/reload` 或重启 pi 生效;改动后请跑对应测试。
-4. `npm:pi-web-access` 要求 pi ≥ 0.86.1;旧版本 pi 启动会告警并降级(可忽略)。
+### Anchor
 
-## 测试与基准
+Reads `PROGRESS.md` at run start and mid-run (when file first appears):
+
+- **Guide form** (no file): skeleton template + location enforcement
+- **State form** (file exists): title + Goal injected into system prompt tail
+
+Constraints: only Goal enters the prompt (task-stable, preserves prefix cache); Now excluded (changes often, would destroy cache); untrusted project files blocked by trust gate.
+
+### Checkpoint
+
+Model calls it voluntarily. Content from model, format guaranteed by code:
+
+```json
+{
+  "kind": "status",
+  "status": "12/40 routes migrated, tests green",
+  "results": "dual-read validated, 237 tests pass",
+  "next": "1. Payment module  2. Cleanup old session utils"
+}
+```
+
+Three-zone contract: managed sections (Goal/Now/Achievements/Next Steps) + **preservation zone** (model's custom sections carried verbatim) + review blocks (folded to 3).
+
+### Metronome
+
+Dual-clock separation:
+
+- **Cadence clock** (when to speak): resets on delivery and on real updates → anti-bombing
+- **Staleness baseline** (what number to say): only advanced by real file changes → the number never lies
+
+All hints are fact chains with zero imperative verbs. Delivered via `sendMessage` to the user-role seat (model-must-read position). Non-compliance has zero consequences.
+
+## Configuration
+
+| Env | Effect |
+|---|---|
+| `PI_DRIFT_GUARD=off` | Disable entire system |
+| `PI_DRIFT_HINT_CHANNEL=tail` | Fall back to old delivery channel (tool result tail) |
+
+## Tests
 
 ```bash
 cd system-inject
-node system-inject.test.mjs   # 12 单元用例(无需网络)
-node drift-guard.test.mjs     # 30 单元用例(无需网络)
-node bench-drift.mjs          # 4 场景 A/B 行为基准(5 次真实 pi 调用)
+node system-inject.test.mjs   # 15 cases
+node drift-guard.test.mjs     # 30 cases
 ```
+
+Zero dependencies. Node >= 23.6.
+
+## Design principles
+
+> Don't constrain the model. Set boundaries, hold the general direction.
+
+- Zero imperatives in all hints (enforced by test)
+- Fire once per cadence period — never repeated, never escalated
+- Refusal is real and exercised; "can be refused" is the proof of freedom
+- The system's success condition is its own silence
+
+## Documentation
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — full system overview
+- [docs/adr/](./docs/adr/) — decision records with rejected alternatives
+
+## License
+
+MIT

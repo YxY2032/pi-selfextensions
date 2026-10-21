@@ -1,5 +1,8 @@
 {
-  "name": "system-inject",
+  "name": "pi-drift-guard",
+  "version": "0.1.0",
+  "description": "Drift-prevention extension for pi: external navigation file + periodic goal re-presentation, zero imperatives",
+  "license": "MIT",
   "private": true,
   "pi": {
     "extensions": [
