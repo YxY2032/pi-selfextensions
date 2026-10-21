@@ -86,7 +86,7 @@ await withCase("T2 首调自动建标准骨架", async () => {
   const { tool, reset } = load();
   await reset();
   await tool.execute("id1", { kind: "status", status: "正在排查" });
-  const doc = readFileSync("PROGRESS.md", "utf8");
+  const doc = readFileSync(".progress.md", "utf8");
   assert.ok(doc.includes("## Goal"), "应有 Goal 节");
   assert.ok(doc.includes("(待补充)"), "空 Goal 应留占位");
   assert.ok(doc.includes("- 正在排查"), "Now 应含汇报内容");
@@ -95,9 +95,9 @@ await withCase("T2 首调自动建标准骨架", async () => {
 await withCase("T3 status 覆盖 Now,Goal 保留", async () => {
   const { tool, reset } = load();
   await reset();
-  writeFileSync("PROGRESS.md", "# 修 bug\n\n## Goal\n保持目标 G1\n\n## Now\n- 旧状态\n");
+  writeFileSync(".progress.md", "# 修 bug\n\n## Goal\n保持目标 G1\n\n## Now\n- 旧状态\n");
   await tool.execute("id2", { kind: "status", status: "新状态 S" });
-  const doc = readFileSync("PROGRESS.md", "utf8");
+  const doc = readFileSync(".progress.md", "utf8");
   assert.ok(doc.includes("保持目标 G1"), "Goal 应穿越保留");
   assert.ok(doc.includes("- 新状态 S"), "Now 应更新");
   assert.ok(!doc.includes("旧状态"), "旧 Now 应被覆盖");
@@ -107,7 +107,7 @@ await withCase("T4 review:Now + 回顾块(自省/调整)落盘", async () => {
   const { tool, reset } = load();
   await reset();
   await tool.execute("id3", { kind: "review", status: "S2", reflect: "自省 R", adjust: "调整 A" });
-  const doc = readFileSync("PROGRESS.md", "utf8");
+  const doc = readFileSync(".progress.md", "utf8");
   assert.ok(/### 回顾 #\d+/.test(doc), "应有回顾块");
   assert.ok(doc.includes("- 自省: 自省 R"), "应含自省");
   assert.ok(doc.includes("- 调整: 调整 A"), "应含调整");
@@ -120,7 +120,7 @@ await withCase("T5 回顾折叠:限留最近 3 段且编号连续", async () => 
   for (let i = 0; i < 5; i++) {
     await tool.execute("id", { kind: "review", status: `S${i}`, reflect: `R${i}`, adjust: `A${i}` });
   }
-  const doc = readFileSync("PROGRESS.md", "utf8");
+  const doc = readFileSync(".progress.md", "utf8");
   const nums = [...doc.matchAll(/^### 回顾 #(\d+)/gm)].map((m) => Number(m[1]));
   assert.equal(nums.length, 3, `应只保留 3 段,实际 ${nums.length}`);
   assert.deepEqual(nums, [nums[0], nums[0] - 1, nums[0] - 2], "最新在最前且编号连续");
@@ -130,13 +130,13 @@ await withCase("T6 review 缺 reflect/adjust → 宽容占位", async () => {
   const { tool, reset } = load();
   await reset();
   await tool.execute("id4", { kind: "review", status: "只有现状" });
-  const doc = readFileSync("PROGRESS.md", "utf8");
+  const doc = readFileSync(".progress.md", "utf8");
   assert.ok(doc.includes("- 自省: -"), "缺省应占位");
 });
 
 // ── 节拍器 ───────────────────────────────────────────────────
 async function seedDoc() {
-  writeFileSync("PROGRESS.md", "# 任务\n## Goal\nG\n## Now\n- 进行中\n");
+  writeFileSync(".progress.md", "# 任务\n## Goal\nG\n## Now\n- 进行中\n");
 }
 
 await withCase("T7 第 50 轮轻检查:消息通道投递 + 同轮去重 + 消费后不顺延 + 三要素", async () => {
@@ -156,7 +156,7 @@ await withCase("T7 第 50 轮轻检查:消息通道投递 + 同轮去重 + 消�
   assert.ok(hint.includes("进行中"), "应引用 Now 对照物");
   assert.ok(hint.includes(':"G"') && hint.includes("Goal"), "应引用 Goal 对照物");
   assert.ok(hint.includes("压缩后可能丢失"), "应含后果事实");
-  assert.ok(hint.includes("先 read PROGRESS.md") && hint.includes("回顾此前的进展与现状"), "先读=回顾任务进展,再更新(非为记而记)");
+  assert.ok(hint.includes("先 read .progress.md") && hint.includes("回顾此前的进展与现状"), "先读=回顾任务进展,再更新(非为记而记)");
   await fire("tool_result", { isError: false });
   assert.equal(sent.length, 1, "同轮去重");
   await fire("turn_end");
@@ -174,7 +174,7 @@ await withCase("T8 第 100 轮 review 优先于 status", async () => {
   const hint = sent[0].message.content[0].text;
   assert.ok(hint.includes("[回顾状态]"), "100 轮应为深度回顾");
   assert.ok(hint.includes("未深度回顾"), "应含回顾陈旧事实");
-  assert.ok(hint.includes("先 read PROGRESS.md") && hint.includes("回顾此前"), "review 同样先回顾再检视");
+  assert.ok(hint.includes("先 read .progress.md") && hint.includes("回顾此前"), "review 同样先回顾再检视");
   assert.ok(hint.includes("通向 Goal"), "回顾仍指向方向问题");
 });
 
@@ -186,7 +186,7 @@ await withCase("T9 无文档 15 次提醒:消息通道 + 位置写死 + 仅一�
   assert.equal(before, undefined, "消息通道下工具结果保持原样");
   assert.equal(sent.length, 1, "建档提醒经消息通道送出");
   const hint = sent[0].message.content[0].text;
-  assert.ok(hint.includes("没有 PROGRESS.md"), "分类器锚词在(trace-report 按此识别建档提示,改文案须两处同步)");
+  assert.ok(hint.includes("没有 .progress.md"), "分类器锚词在(trace-report 按此识别建档提示,改文案须两处同步)");
   assert.ok(hint.includes("工作目录根") && hint.includes(process.cwd()), "位置写死(含绝对路径,ADR-0005)");
   assert.ok(hint.includes("只从运行目录读取"), "读取位置声明在");
   const after = await fire("tool_result", { isError: false });
@@ -276,9 +276,9 @@ await withCase("T16 off 时无文档路径也静默(建档提醒不发出)", asy
 await withCase("T17 Goal 标题行带尾随空格:不丢 Goal、不破坏性覆写", async () => {
   const { tool, reset } = load();
   await reset();
-  writeFileSync("PROGRESS.md", "# 修 bug \n## Goal \n保持目标 G9\n## Now\n- 旧\n");
+  writeFileSync(".progress.md", "# 修 bug \n## Goal \n保持目标 G9\n## Now\n- 旧\n");
   await tool.execute("id", { kind: "status", status: "新" });
-  const doc = readFileSync("PROGRESS.md", "utf8");
+  const doc = readFileSync(".progress.md", "utf8");
   assert.ok(doc.includes("保持目标 G9"), "Goal 应穿越(尾随空格不至覆写)");
 });
 
@@ -287,7 +287,7 @@ await withCase("T18 自省文本内联 '### 回顾' 不产生幻影块", async (
   await reset();
   await tool.execute("id", { kind: "review", status: "S", reflect: "参照 ### 回顾 #99 的结论", adjust: "A" });
   await tool.execute("id", { kind: "status", status: "S2" });
-  const doc = readFileSync("PROGRESS.md", "utf8");
+  const doc = readFileSync(".progress.md", "utf8");
   const nums = [...doc.matchAll(/^### 回顾 #(\d+)/gm)].map((m) => Number(m[1]));
   assert.ok(!nums.includes(99), "内联字样不得成为切块边界");
   assert.equal(nums.length, 1, "真实回顾块仍在且仅一块");
@@ -296,11 +296,11 @@ await withCase("T18 自省文本内联 '### 回顾' 不产生幻影块", async (
 await withCase("T19 文件存在但读失败:中止落盘,不覆写", async () => {
   const { tool, reset } = load();
   await reset();
-  rmSync("PROGRESS.md", { force: true });
-  mkdirSync("PROGRESS.md"); // 目录:existsSync=true 但 readFileSync 抛 EISDIR
+  rmSync(".progress.md", { force: true });
+  mkdirSync(".progress.md"); // 目录:existsSync=true 但 readFileSync 抛 EISDIR
   await assert.rejects(() => tool.execute("id", { kind: "status", status: "X" }),
     /读取失败|中止/, "应抛错而非覆写");
-  assert.ok(statSync("PROGRESS.md").isDirectory(), "原路径未被破坏");
+  assert.ok(statSync(".progress.md").isDirectory(), "原路径未被破坏");
 });
 
 // —— ADR-0002:事实化提示家族 ─────────────────────────────────
@@ -324,7 +324,7 @@ await withCase("T20 哲学红线:全部提示文案零祈使句", async () => {
   { // doc(消息通道,ADR-0005;须清掉前面块种的文件,否则走不到建档分支)
     const { fire, reset, sent } = load();
     await reset();
-    rmSync("PROGRESS.md", { force: true });
+    rmSync(".progress.md", { force: true });
     for (let i = 0; i < 14; i++) await fire("tool_result", { isError: false });
     await fire("tool_result", { isError: false });
     texts.push(sent[0].message.content[0].text);
@@ -332,7 +332,7 @@ await withCase("T20 哲学红线:全部提示文案零祈使句", async () => {
   { // 空文档回顾事实(ADR-0005,亦入红线族)
     const { fire, reset, sent } = load();
     await reset();
-    rmSync("PROGRESS.md", { force: true });
+    rmSync(".progress.md", { force: true });
     for (let i = 0; i < 14; i++) await fire("tool_result", { isError: false });
     await fire("tool_result", { isError: false });
     for (let i = 0; i < 100; i++) await fire("turn_end");
@@ -358,7 +358,7 @@ await withCase("T21 直接 write 重置陈旧事实:数字反映真实文件更�
   await reset();
   await seedDoc();
   for (let i = 0; i < 25; i++) await fire("turn_end");
-  await fire("tool_result", { isError: false, toolName: "write", input: { path: "PROGRESS.md", content: "..." } }); // 第25轮直接写
+  await fire("tool_result", { isError: false, toolName: "write", input: { path: ".progress.md", content: "..." } }); // 第25轮直接写
   for (let i = 0; i < 25; i++) await fire("turn_end"); // 至第50轮(status 到期,review 未到)
   await fire("tool_result", { isError: false, content: [{ type: "text", text: "O" }] });
   const hint = sent[0].message.content[0].text;
@@ -369,7 +369,7 @@ await withCase("T21 直接 write 重置陈旧事实:数字反映真实文件更�
 await withCase("T22 读失败降级:纯数字事实,不引用对照物", async () => {
   const { fire, reset, sent } = load();
   await reset();
-  mkdirSync("PROGRESS.md"); // EISDIR
+  mkdirSync(".progress.md"); // EISDIR
   for (let i = 0; i < 50; i++) await fire("turn_end");
   await fire("tool_result", { isError: false, content: [{ type: "text", text: "O" }] });
   const hint = sent[0].message.content[0].text;
@@ -408,14 +408,14 @@ await withCase("T24 转向提示无文档时降级:保留事件事实,无 Goal �
 await withCase("T25 自定义节保留与归位(不再被重建删除)", async () => {
   const { tool, reset } = load();
   await reset();
-  writeFileSync("PROGRESS.md", [
+  writeFileSync(".progress.md", [
     "# 任务", "", "## Goal", "G", "",
     "## 已完成题目", "| 题 | 分 |", "|---|---|", "| c-06 | 100 |", "",
     "## Now", "- 旧状态", "",
     "## 关键经验", "HugeGraph 用 Unsafe 改线程名绕沙箱", "",
   ].join("\n"));
   await tool.execute("id", { kind: "status", status: "新状态" });
-  const doc = readFileSync("PROGRESS.md", "utf8");
+  const doc = readFileSync(".progress.md", "utf8");
   assert.ok(doc.includes("## 已完成题目") && doc.includes("| c-06 | 100 |"), "自定义表格必须原样保留");
   assert.ok(doc.includes("## 关键经验") && doc.includes("Unsafe 改线程名"), "自定义经验节必须保留");
   assert.ok(doc.includes("- 新状态") && !doc.includes("旧状态"), "Now 照常替换");
@@ -426,9 +426,9 @@ await withCase("T25 自定义节保留与归位(不再被重建删除)", async (
 await withCase("T26 改名容错:Now (最终) 视为本体,Now备忘 视为保留区", async () => {
   const { tool, reset } = load();
   await reset();
-  writeFileSync("PROGRESS.md", "# t\n\n## Goal\nG\n\n## Now (最终)\n- 旧\n\n## Now备忘\n- 这不是 Now\n");
+  writeFileSync(".progress.md", "# t\n\n## Goal\nG\n\n## Now (最终)\n- 旧\n\n## Now备忘\n- 这不是 Now\n");
   await tool.execute("id", { kind: "status", status: "新" });
-  const doc = readFileSync("PROGRESS.md", "utf8");
+  const doc = readFileSync(".progress.md", "utf8");
   assert.equal(doc.match(/^## Now(\s|$|（|\()/gm).length, 1, "只允许一个受管 Now 节(无双胞胎)");
   assert.ok(doc.includes("- 新") && !doc.includes("- 旧"), "改名 Now 被当作本体替换");
   assert.ok(doc.includes("## Now备忘") && doc.includes("这不是 Now"), "连续命名视为保留区");
@@ -437,12 +437,12 @@ await withCase("T26 改名容错:Now (最终) 视为本体,Now备忘 视为保�
 await withCase("T27 results/next 参数:提供则替换,缺省保留原节", async () => {
   const { tool, reset } = load();
   await reset();
-  writeFileSync("PROGRESS.md", "# t\n\n## Goal\nG\n\n## Now\n- a\n\n## 成果\n旧成果\n\n## 下一步\n旧计划\n");
+  writeFileSync(".progress.md", "# t\n\n## Goal\nG\n\n## Now\n- a\n\n## 成果\n旧成果\n\n## 下一步\n旧计划\n");
   await tool.execute("id", { kind: "status", status: "S" }); // 不带 results/next
-  let doc = readFileSync("PROGRESS.md", "utf8");
+  let doc = readFileSync(".progress.md", "utf8");
   assert.ok(doc.includes("旧成果") && doc.includes("旧计划"), "未提供参数时两节原样保留");
   await tool.execute("id", { kind: "status", status: "S2", results: "19 题 4750 分", next: "a-14 → a-17" });
-  doc = readFileSync("PROGRESS.md", "utf8");
+  doc = readFileSync(".progress.md", "utf8");
   assert.ok(doc.includes("19 题 4750 分") && !doc.includes("旧成果"), "results 整节替换");
   assert.ok(doc.includes("a-14 → a-17") && !doc.includes("旧计划"), "next 整节替换");
 });
@@ -451,7 +451,7 @@ await withCase("T28 首建骨架含成果/下一步占位提示", async () => {
   const { tool, reset } = load();
   await reset();
   await tool.execute("id", { kind: "status", status: "起步" });
-  const doc = readFileSync("PROGRESS.md", "utf8");
+  const doc = readFileSync(".progress.md", "utf8");
   assert.ok(doc.includes("## 成果") && doc.includes("可核对的事实"), "成果节占位提示在");
   assert.ok(doc.includes("## 下一步") && doc.includes("按优先级"), "下一步节占位提示在");
 });

@@ -6,7 +6,7 @@ import { Type } from "typebox";
 // 不存在 systemPrompt 返回值的单槽覆盖问题。
 // 设计与决策记录见同目录 README.md。PI_DRIFT_GUARD=off 时全部静默。
 
-const STATE_FILE = "PROGRESS.md";
+const STATE_FILE = ".progress.md";
 const STATUS_EVERY = 50;  // 轻检查间隔(轮)——ADR-0002:贴近实测自然维护节奏(≈140 轮/次),降噪约 78%
 const REVIEW_EVERY = 100; // 深度回顾间隔(轮)
 const BRIEF_AFTER = 15;   // 无文档时,工具调用达到此次数提醒建文档(仅一次)
@@ -322,7 +322,7 @@ export default function (pi) {
       "哪些无效、路线是否需要调整(约每 100 轮一次)。\n" +
       "status→Now 节整节替换;可选 results→成果节、next→下一步节(提供才替换,不提供则保留原节)。\n" +
       "标题、Goal、回顾、以及你自己添加的其他小节(表格/清单/经验)一律原样保留。\n" +
-      "导航文件固定为运行目录根的 PROGRESS.md——本系统只从运行目录读取。不存在则按标准骨架自动创建。",
+      "导航文件固定为运行目录根的 .progress.md——本系统只从运行目录读取。不存在则按标准骨架自动创建。",
     parameters: Type.Object({
       kind: Type.String({ enum: ["status", "review"], description: "回顾类型:status=现状汇报,review=深度自省" }),
       status: Type.String({ description: "现状汇报,四要素:正在做什么、已完成或已验证的成果、做过的关键工作、下一步打算。可核对的事实优先(路径/命令/测试结果);对照上一条 Now,只记增量。" }),

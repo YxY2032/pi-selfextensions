@@ -98,7 +98,7 @@ await withCase("T2 无文件 → 引导形态(含骨架,无数据标注)", async
 
 await withCase("T3 有文件 → 注入 title+Goal,不含 Now,含切换提示与数据标注", async () => {
   const run = makeRunner();
-  writeFileSync("PROGRESS.md", SAMPLE_NAV);
+  writeFileSync(".progress.md", SAMPLE_NAV);
   const r = await run(BASE);
   assert.ok(r.systemPrompt.includes("# 测试A系统兼容性"), "标题应注入");
   assert.ok(r.systemPrompt.includes("弱网下的表现"), "Goal 应注入");
@@ -109,14 +109,14 @@ await withCase("T3 有文件 → 注入 title+Goal,不含 Now,含切换提示与
 
 await withCase("T4 文件无 Goal 节 → 原文头部兜底", async () => {
   const run = makeRunner();
-  writeFileSync("PROGRESS.md", "自由散文本,没有标准结构。FALLBACK-MARKER");
+  writeFileSync(".progress.md", "自由散文本,没有标准结构。FALLBACK-MARKER");
   const r = await run(BASE);
   assert.ok(r.systemPrompt.includes("FALLBACK-MARKER"), "应含原文兜底");
 });
 
 await withCase("T5 未信任项目 → 引导形态,不注入文件内容", async () => {
   const run = makeRunner(false);
-  writeFileSync("PROGRESS.md", "PLANTED-BY-REPO-MARKER");
+  writeFileSync(".progress.md", "PLANTED-BY-REPO-MARKER");
   const r = await run(BASE, { trusted: false });
   assert.ok(r.systemPrompt.includes("照抄骨架填空"), "未信任时应为引导形态");
   assert.ok(!r.systemPrompt.includes("PLANTED-BY-REPO-MARKER"), "仓库预埋内容不得进入提示词");
@@ -124,7 +124,7 @@ await withCase("T5 未信任项目 → 引导形态,不注入文件内容", asyn
 
 await withCase("T6 Goal 超长 → 截断标记", async () => {
   const run = makeRunner();
-  writeFileSync("PROGRESS.md", "# 长任务\n## Goal\n" + "x".repeat(1200));
+  writeFileSync(".progress.md", "# 长任务\n## Goal\n" + "x".repeat(1200));
   const r = await run(BASE);
   assert.ok(r.systemPrompt.includes("(已截断)"), "应有截断标记");
 });
@@ -138,14 +138,14 @@ await withCase("T7 PI_DRIFT_GUARD=off → 锚停用,preamble 照常", async () =
 
 await withCase("T8 CRLF 文件 → Goal 正常提取", async () => {
   const run = makeRunner();
-  writeFileSync("PROGRESS.md", "# CRLF任务\r\n## Goal\r\n验证 CRLF 兼容。CRLF-GOAL-MARKER\r\n## Now\r\nx");
+  writeFileSync(".progress.md", "# CRLF任务\r\n## Goal\r\n验证 CRLF 兼容。CRLF-GOAL-MARKER\r\n## Now\r\nx");
   const r = await run(BASE);
   assert.ok(r.systemPrompt.includes("CRLF-GOAL-MARKER"), "CRLF 应被归一后提取");
 });
 
 await withCase("T9 空文件 → 引导形态", async () => {
   const run = makeRunner();
-  writeFileSync("PROGRESS.md", "   \n");
+  writeFileSync(".progress.md", "   \n");
   const r = await run(BASE);
   assert.ok(r.systemPrompt.includes("当前没有导航文件"), "空文件按无文件处理");
 });
@@ -188,7 +188,7 @@ await withCase("T13 run 内锚切换:文件创建后 forceSystemPrompt 原地改
   assert.equal(sw.options.forceSystemPrompt, r.systemPrompt, "宿主 options 应被写入");
 
   // 模拟模型建文件
-  writeFileSync("PROGRESS.md", "# 测试任务\n\n## Goal\n在时限内完成迁移。\n\n## Now\n- 起步\n");
+  writeFileSync(".progress.md", "# 测试任务\n\n## Goal\n在时限内完成迁移。\n\n## Now\n- 起步\n");
 
   await sw.toolResult();
   assert.ok(sw.options.forceSystemPrompt.includes("在时限内完成迁移"), "forceSystemPrompt 应含 Goal(状态形态)");
@@ -196,13 +196,13 @@ await withCase("T13 run 内锚切换:文件创建后 forceSystemPrompt 原地改
   assert.ok(sw.options.forceSystemPrompt.includes("sandbox task executor"), "preamble 应保留");
 
   // 再触发 toolResult 不重复切(已切过)
-  writeFileSync("PROGRESS.md", "# 测试任务\n\n## Goal\n更新了的目标。\n\n## Now\n- 进行中\n");
+  writeFileSync(".progress.md", "# 测试任务\n\n## Goal\n更新了的目标。\n\n## Now\n- 进行中\n");
   await sw.toolResult();
   assert.ok(sw.options.forceSystemPrompt.includes("在时限内完成迁移"), "不重复切换(首次的 Goal 留存)");
 });
 
 await withCase("T14 run 内锚切换:开局已有文件 → 不触发切换(开局即状态形态)", async () => {
-  writeFileSync("PROGRESS.md", "# 已有\n\n## Goal\nG1\n\n## Now\n- a\n");
+  writeFileSync(".progress.md", "# 已有\n\n## Goal\nG1\n\n## Now\n- a\n");
   const sw = makeSwitchRunner();
   const r = await sw.start(BASE);
   assert.ok(r.systemPrompt.includes("G1"), "开局即状态形态");
@@ -211,11 +211,11 @@ await withCase("T14 run 内锚切换:开局已有文件 → 不触发切换(开�
 });
 
 await withCase("T15 run 内锚切换:PI_DRIFT_GUARD=off → 不触发切换", async () => {
-  rmSync("PROGRESS.md", { force: true });
+  rmSync(".progress.md", { force: true });
   process.env.PI_DRIFT_GUARD = "off";
   const sw = makeSwitchRunner();
   await sw.start(BASE);
-  writeFileSync("PROGRESS.md", "# x\n\n## Goal\nG\n\n## Now\n- a\n");
+  writeFileSync(".progress.md", "# x\n\n## Goal\nG\n\n## Now\n- a\n");
   const before = sw.options.forceSystemPrompt;
   await sw.toolResult();
   assert.equal(sw.options.forceSystemPrompt, before, "off 时 tool_result 不改写(锚全关)");

@@ -61,7 +61,7 @@ function hintKind(text) {
   if (text.includes("仍未建立")) return "empty";
   if (text.includes("[回顾状态") || text.includes("[回顾点")) return "review";
   if (text.includes("[转向提示]")) return "steer";
-  if (text.includes("无导航文件") || text.includes("没有 PROGRESS.md")) return "doc";
+  if (text.includes("无导航文件") || text.includes("没有 .progress.md")) return "doc";
   return "status"; // [导航状态] / [检查点] / [系统观察]
 }
 
@@ -102,7 +102,7 @@ for (const e of entries) {
         navUpdates.push({ ts: e.timestamp, turn: assistantTurns, via: "checkpoint", text });
       }
       if (c.type === "toolCall" && (c.name === "write" || c.name === "edit")) {
-        if (JSON.stringify(c.arguments ?? {}).includes("PROGRESS.md")) {
+        if (JSON.stringify(c.arguments ?? {}).includes(".progress.md")) {
           const a = c.arguments ?? {};
           const text = c.name === "write"
             ? `全文写入:\n${String(a.content ?? a.file_text ?? JSON.stringify(a))}`
@@ -151,7 +151,7 @@ if (navFlag) {
 if (compliance) {
   const measured = hints.filter((h) => h.kind === "status" || h.kind === "review");
   let complied = 0;
-  console.log(`\n[遵从率] 窗口=提示后 ${COMPLIANCE_WINDOW} 轮内发生导航更新(checkpoint 或直接写 PROGRESS.md)`);
+  console.log(`\n[遵从率] 窗口=提示后 ${COMPLIANCE_WINDOW} 轮内发生导航更新(checkpoint 或直接写 .progress.md)`);
   for (const h of measured) {
     const ok = navUpdates.some((u) => u.turn > h.turn && u.turn <= h.turn + COMPLIANCE_WINDOW);
     if (ok) complied++;

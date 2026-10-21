@@ -66,8 +66,8 @@ let lastNavHash: string | null = null;
 
 function snapshotNav(context: string): void {
   try {
-    if (!existsSync("PROGRESS.md")) return;
-    const content = readFileSync("PROGRESS.md", "utf8");
+    if (!existsSync(".progress.md")) return;
+    const content = readFileSync(".progress.md", "utf8");
     const hash = createHash("sha1").update(content).digest("hex").slice(0, 8);
     if (hash === lastNavHash) return;
     lastNavHash = hash;

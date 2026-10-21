@@ -20,7 +20,7 @@ const PREAMBLE_INJECT =
 // 缓存分离设计:仅注入 Goal(任务内稳定,保住提示词前缀缓存);
 // Now 不进系统提示词——最新状态经消息流与文件承载。
 // ============================================================
-const STATE_FILE = "PROGRESS.md";
+const STATE_FILE = ".progress.md";
 const NAV_MAX = 800; // 标题+Goal 注入上限
 const RAW_MAX = 400; // 无 Goal 节时的原文兜底长度
 
